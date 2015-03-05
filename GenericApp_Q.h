@@ -68,14 +68,12 @@ extern "C"
 #define QUEEN_CMD_CLUSTERID           2
   
 // Send Message Timeout
-#define GENERICAPP_EM770W_WAIT_TIMEOUT         1000     // Delay 1 seconds
-#define GENERICAPP_TIMER_TWOSEC_TIMEOUT        2000     // Every 2 seconds
-#define GENERICAPP_WDT_CLEAR_TIMEOUT            500     // Every 500 ms  
+#define GENERICAPP_MU609_WAIT_TIMEOUT           1000     // Delay 1 seconds
+#define GENERICAPP_WDT_CLEAR_TIMEOUT            500      // Every 500 ms  
   
 // Application Events (OSAL) - These are bit weighted definitions.     
-#define GENERICAPP_EM770W_WAIT_EVT      0x0001
+#define GENERICAPP_MU609_WAIT_EVT       0x0001
 #define GENERICAPP_WDT_CLEAR_EVT        0x0002
-#define GENERICAPP_TIMER_TWOSEC_EVT     0x0004
   
 #if defined( IAR_ARMCM3_LM )
 #define GENERICAPP_RTOS_MSG_EVT       0x0002
@@ -98,6 +96,11 @@ extern void GenericApp_Init( byte task_id );
  * Task Event Processor for the Generic Application
  */
 extern UINT16 GenericApp_ProcessEvent( byte task_id, UINT16 events );
+
+/*********************************************************************
+ * EXTERNAL VARIABLES
+ */
+
 
 /*********************************************************************
 *********************************************************************/
