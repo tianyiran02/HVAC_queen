@@ -14,20 +14,20 @@
  * MACROS
  */
 // Reset Value
-#define WCDMA_OVERTIMERESET     2       // upload failer over 2 times, 3G reset
-#define WCDMAModule_IPINITResend_MAX 15 // IPINIT overtime 15 times, undone react
-#define WCDMA_RESTARTTIMER      60      // if not restart in 60s, resend reset cmd
+#define WCDMA_OVERTIMERESET     4       // upload failer over 4 times, 3G reset
+#define WCDMAModule_IPINITResend_MAX 10 // IPINIT overtime 10 times, undone react
+#define WCDMA_RESTARTTIMER      30      // if not restart in 45s, resend reset cmd
 #define WCDMA_RESETTIMER        4       // Reset 3G Module every 4 hours, largest value, 18hours
       
 #define WCDMA_10SDELAY                  10 // normal time interval, 10s
-#define WCDMA_SENDTIME                  20 // normal upload time, 15s  
+#define WCDMA_SENDTIME                  60 // acceptable upload time, 60s  
 
 
 // Cellular module steps
 // Initialize stage
 #define WCDMAsetup_NotReady             0  // After power up
 #define WCDMAsetup_Connected            1  // Received poweron Msg, send ATE0
-#define WCDMAsetup_CURCsend             2  // Received 'OK', send CURC=2,40,40
+#define WCDMAsetup_ATE0send             2  // Received 'OK', send CURC=2,40,40
 #define WCDMAsetup_NWTIMEwait           3  // Received 'OK', wait for NWTIME report
 #define WCDMAsetup_IPINITsend           4  // Received timestamp, send IPINIT
 #define WCDMAsetup_3GReady              5  // Received 'OK', initialize finish
@@ -51,14 +51,13 @@
  * EXTERNAL VARIABLES
  */
 extern uint8 WCDMAModule_ReConOverTries;
-extern uint16 WCDMAModule_ResetTimer;
-extern uint8 WCDMAModule_RestartTimer;
 extern uint8 WCDMAModuleSTEP;
 extern short queen_Available;
 
 extern uint8 JSON_TimeStamp[16];
 extern uint8 MU609_Sending[333];
 
+extern uint8 MU609_AT[4];
 /* below are IPINIT */
 #ifdef LYCAMOBILE
 extern uint8 MU609_IPINIT[49];

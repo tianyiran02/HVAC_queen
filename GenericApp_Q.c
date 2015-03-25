@@ -746,6 +746,8 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
     {
       // If not Data frame response here(only status)
     } // if(temp[3] && 0x40) // Data Frame
+    
+    myBlockingHalUARTWrite(0,MU609_AT,4);
   }// if(bufincluded)
   
   /* Device does not exist in look-up table, ask for initial msg */
