@@ -747,7 +747,13 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
       // If not Data frame response here(only status)
     } // if(temp[3] && 0x40) // Data Frame
     
+    // send AT to push, enable timer
     myBlockingHalUARTWrite(0,MU609_AT,4);
+    // change status
+    WCDMAModuleSTEP = WCDMAsetup_ATGO; 
+    // Timer, at push resend timer
+    setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,10);// Start timer/counter
+      
   }// if(bufincluded)
   
   /* Device does not exist in look-up table, ask for initial msg */

@@ -70,7 +70,6 @@ static uint8 WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET;
 // than setting time, one connection over time ocour. If it happen more than
 // WCDMA_OVERTIMERESET times, cellular module restart.
 
-
 static short WCDMAModuleTimerEnable = FALSE;
 static uint8 WCDMAModuleTimerCounter = 0;
 static uint8 WCDMAModuleFailureTimes = 0;
@@ -138,20 +137,37 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       {
         WCDMAModuleFailureTimes --; // how many time it fail?
         
-        if(WCDMAModuleFailureTimes)
+        if(WCDMAModuleFailureTimes) // still trying
         {
           WCDMAModuleTimerCounter = WCDMA_10SDELAY;
           uartWriteIPINIT(); // re-send IPINIT
         }
-        else
+        else // send failed
         {
           queen_Reset3GModule(); // reset cellular module
         } 
       }
       
+      // 2. AT PUSH resend
+      else if(WCDMAModuleSTEP == WCDMAsetup_ATGO)
+      {
+        WCDMAModuleFailureTimes --; // how many time it fail?
+        
+        if(WCDMAModuleFailureTimes) // still trying
+        {
+          WCDMAModuleTimerCounter = WCDMA_10SDELAY;
+          uartWriteIPINIT(); // re-send IPINIT
+        }
+        else // send failed
+        {
+          queen_Reset3GModule(); // reset cellular module
+        } 
+        
+      }
+      
       // 2. send during time
-      else if((WCDMAModuleSTEP > WCDMAsetup_3GReady) 
-              && (WCDMAModuleSTEP < WCDMAsetup_IPCLOSEsend))
+      else if((WCDMAModuleSTEP > WCDMAsetup_ATGO) 
+              && (WCDMAModuleSTEP <= WCDMAsetup_IPCLOSEsend))
       {
         WCDMAModule_ReConOverTries --;
         if(WCDMAModule_ReConOverTries == 0) // if happen more than default times
@@ -387,12 +403,13 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     // -------------------- Send -----------------------
     
     // 6. p: Received 'OK', initialize finish
-  case WCDMAsetup_3GReady:  
+  case WCDMAsetup_ATGO:  
     if((strcmp(MU609_BUF,MU609_ACK) == 0) && (queen_Available == UNAVAILABLE))
     {
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_SENDTIME,0);// Start new timer/counter
+     
       myBlockingHalUARTWrite(0,MU609_IPOPEN,38); // send IPOPEN
-      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_SENDTIME,0);// Start timer/counter
-      
+       
       WCDMAModuleSTEP = WCDMAsetup_IPOPENsend; // change state
     }
     break;

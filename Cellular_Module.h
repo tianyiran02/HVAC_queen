@@ -18,7 +18,8 @@
 #define WCDMAModule_IPINITResend_MAX 10 // IPINIT overtime 10 times, undone react
 #define WCDMA_RESTARTTIMER      30      // if not restart in 45s, resend reset cmd
 #define WCDMA_RESETTIMER        4       // Reset 3G Module every 4 hours, largest value, 18hours
-      
+#define WCDMA_ATPUSHDELAY       5       // AT push resend delay 5s      
+
 #define WCDMA_10SDELAY                  10 // normal time interval, 10s
 #define WCDMA_SENDTIME                  60 // acceptable upload time, 60s  
 
@@ -32,11 +33,12 @@
 #define WCDMAsetup_IPINITsend           4  // Received timestamp, send IPINIT
 #define WCDMAsetup_3GReady              5  // Received 'OK', initialize finish
 // Send Stage
-#define WCDMAsetup_IPOPENsend           6  // Check previos steps, send IPOPEN
-#define WCDMAsetup_IPSENDEXsend         7  // Received 'OK', send IPSENDEX
-#define WCDMAsetup_OKtoSend             8  // Received 'OK', send data      
-#define WCDMAsetup_IPCLOSEsend          9  // Received IPSENDEX ACK, send IPCLOSE
-#define WCDMAsetup_SendFinish           10 // Send finish and success. Cheers! (not realy use)
+#define WCDMAsetup_ATGO                 6  // Send AT push CMD
+#define WCDMAsetup_IPOPENsend           7  // Check previos steps, send IPOPEN
+#define WCDMAsetup_IPSENDEXsend         8  // Received 'OK', send IPSENDEX
+#define WCDMAsetup_OKtoSend             9  // Received 'OK', send data      
+#define WCDMAsetup_IPCLOSEsend          10  // Received IPSENDEX ACK, send IPCLOSE
+#define WCDMAsetup_SendFinish           11 // Send finish and success. Cheers! (not realy use)
 // Others
 #define WCDMAsetup_TIMESTAMPUPDATE      12 // Update timestamp
 #define WCDMAsetup_TIMESTAMPUPDATES2    13 // Update timestamp step 2       
@@ -50,7 +52,6 @@
 /*********************************************************************
  * EXTERNAL VARIABLES
  */
-extern uint8 WCDMAModule_ReConOverTries;
 extern uint8 WCDMAModuleSTEP;
 extern short queen_Available;
 
@@ -100,4 +101,8 @@ extern void queen_Reset3GModule( void );
  */
 extern void Cellular_OneSecondTimerServer( byte, uint32, uint32);
 
+/*
+ * 1 second system timer service function, essential to control MU609 
+ */
+extern void setWCDMAoneSecondStepTimer(short, uint8, uint8);
 #endif
