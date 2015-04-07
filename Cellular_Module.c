@@ -55,7 +55,7 @@ Function list:
 
 uint8 WCDMAModuleSTEP = 0; 
 // 0-x, indicate the different step in setup
-uint8 WCDMASignalState = NoSignal;
+uint8 WCDMASignalState = NoService;
 // Signal indicator
 
 // ----------------- counter -----------------
@@ -202,30 +202,50 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   }
   
   /* 2. LED control
-   * 
+   *
+   * LED2, D3, Signal Indicator LED
+   * LED4, D2, Cellular Module Status LED
+   *
    */
-  // LED2, D3, Cellular connection LED
-  if(WCDMAModuleSTEP == WCDMAsetup_NotReady)
+  
+   /* LED2, D3, Signal Indicator LED */
+
+  // 1. No Service, LED OFF
+  if(WCDMASignalState == NoService) 
   {
-    HalLedSet (HAL_LED_4, HAL_LED_MODE_ON); // off LED4, internet LED
+    HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // off LED2, internet LED
+  }
+  
+  // 2. Has signal, but services restricted, flash LED
+  else if(WCDMASignalState != ValServices)
+  {
+    //HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // off LED2
     HalLedBlink( HAL_LED_2, 2, 50, 1000 ); // flash 1s
   }
+  
+  // 3. Signal Normal, LED ON
   else
   {
-    HalLedSet (HAL_LED_2, HAL_LED_MODE_OFF);
-    // Module Available, enable statu led2 d3
+    HalLedSet (HAL_LED_2, HAL_LED_MODE_OFF); // Service available, enable statu led2 d3
   }
-  // LED4, D2, Cellular internet LED
+  
+   /* LED4, D2, Cellular Status LED */
+  // When Initialize Cellular Module, flash in 1s duty
   if((WCDMAModuleSTEP < WCDMAsetup_3GReady) && (WCDMAModuleSTEP != WCDMAsetup_NotReady))
   {
     HalLedBlink( HAL_LED_4, 2, 50, 1000 ); // flash 1s
   }
+  
+  // Not detect Cellular module, turn off LED
   else if(WCDMAModuleSTEP == WCDMAsetup_NotReady)
   {
     HalLedSet (HAL_LED_4, HAL_LED_MODE_ON); // Module Available, enable statu led4 d2
   }
+  
+  // Otherwise, if not flashing (successful upload), keep LED on
   else
   {
+    // LEDAvoidControl was used to perform 0.5s/2s flash when successfully upload one datapoint.
     if(LEDAvoidControl == 0)
     {
       HalLedSet (HAL_LED_4, HAL_LED_MODE_OFF); // Module Available, enable statu led4 d2
@@ -234,7 +254,6 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       LEDAvoidControl --;
   }
   
-      
   
   /* 3. check restart timer
    */
@@ -362,9 +381,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
           
         myBlockingHalUARTWrite(0,MU609_CURC,17); // send CURC
         WCDMAModuleSTEP = WCDMAsetup_Connected; // change state
-        
-        HalLedSet (HAL_LED_2, HAL_LED_MODE_OFF);
-        // 3G Available, enable statu led2 d3
       }
       break;
       

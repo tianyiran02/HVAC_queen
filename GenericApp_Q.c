@@ -38,21 +38,15 @@
 ******************************************************************************/
 
 /*********************************************************************
-  This application isn't intended to do anything useful - it is
-  intended to be a simple example of an application's structure.
 
-  This application periodically sends a "Hello World" message to
-  another "Generic" application (see 'txMsgDelay'). The application
-  will also receive "Hello World" packets.
-
-  This application doesn't have a profile, so it handles everything
-  directly - by itself.
-
-  Key control:
-    SW1:  changes the delay between TX packets
-    SW2:  initiates end device binding
-    SW3:
-    SW4:  initiates a match description request
+    D1 - LED3
+    D2 - LED4
+    
+    D3 - LED2 : Signal Indicator
+    No Signal, LED ON
+    Has signal, but services restricted, flash LED
+    Signal Normal, LED ON
+    
 *********************************************************************/
 
 /*********************************************************************
