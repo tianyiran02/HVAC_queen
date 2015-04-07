@@ -49,10 +49,19 @@
 
 #define ENABLE          1
 #define DISABLE         0
+
+#define NoService       0
+#define ResServices     1       // Restricted Services
+#define ValServices     2       // Valid Services
+#define ResReServices   3       // Restricted Regional Service
+#define Hibernate       4       
+
+
 /*********************************************************************
  * EXTERNAL VARIABLES
  */
 extern uint8 WCDMAModuleSTEP;
+extern uint8 WCDMASignalState;
 extern short queen_Available;
 
 extern uint8 JSON_TimeStamp[16];
