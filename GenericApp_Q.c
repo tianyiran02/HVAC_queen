@@ -39,13 +39,18 @@
 
 /*********************************************************************
 
-    D1 - LED3
-    D2 - LED4
+    D1 - LED3 : Zigbee Network Indicator
+      
+    D2 - LED4 : Cellular Status Indicator
+      Not detect cellular module: LED off
+      Detected module, initializing: Flashing in 1s cycle
+      Normal Status: LED on
+      Finish a upload: LED flash in 0.5s/2s
     
     D3 - LED2 : Signal Indicator
-    No Signal, LED ON
-    Has signal, but services restricted, flash LED
-    Signal Normal, LED ON
+      No Signal, LED ON
+      Has signal, but services restricted, flash LED
+      Signal Normal, LED ON
     
 *********************************************************************/
 
@@ -180,9 +185,6 @@ devStates_t GenericApp_NwkState;
 
 byte GenericApp_TransID;  // This is the unique message ID (counter)
 
-// Transplant from version 4 2014/11/03. ver5 bak1
-// 
-//
 uint16 AddressManageBUF[MAXDEVNUM] = {0};  // Address Manage buffer
 
 afAddrType_t queen_CMD_DstAddr;
@@ -332,23 +334,6 @@ uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
     // return unprocessed events
     return (events ^ SYS_EVENT_MSG);
   }
-  
-  /*
-   * WDT Reload Timer Event
-   *
-   */
-  if(events & GENERICAPP_WDT_CLEAR_EVT)
-  {
-    // clear timer     
-    WDCTL |= WDCLP1; 
-    WDCTL |= WDCLP2; 
-    
-    // reload timer 
-    osal_start_timerEx( GenericApp_TaskID,
-                      GENERICAPP_WDT_CLEAR_EVT,
-                      GENERICAPP_WDT_CLEAR_TIMEOUT );
-    return (events ^ GENERICAPP_WDT_CLEAR_EVT);
-  }
 
   /* 1s Delay Timer Event, setup at GeneriApp_Init. Run forever.
    */
@@ -365,6 +350,27 @@ uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
     
     return (events ^ GENERICAPP_MU609_WAIT_EVT);
   }  
+
+  
+#ifdef WDT_IN_PM1
+  /*
+   * WDT Reload Timer Event
+   *
+   */
+  if(events & GENERICAPP_WDT_CLEAR_EVT)
+  {
+    // clear timer     
+    WDCTL |= WDCLP1; 
+    WDCTL |= WDCLP2; 
+    
+    // reload timer 
+    osal_start_timerEx( GenericApp_TaskID,
+                      GENERICAPP_WDT_CLEAR_EVT,
+                      GENERICAPP_WDT_CLEAR_TIMEOUT );
+    return (events ^ GENERICAPP_WDT_CLEAR_EVT);
+  }
+#endif
+
   
 #if defined( IAR_ARMCM3_LM )
   // Receive a message from the RTOS queue
@@ -401,11 +407,13 @@ static void GenericApp_MessageMSGCB( afIncomingMSGPacket_t *pkt )
 {
   switch ( pkt->clusterId )
   {
-    case QUEEN_CMD_CLUSTERID: // Zigbee control 
+    // Zigbee control(ACK, sending request, etc.) 
+    case QUEEN_CMD_CLUSTERID: 
       queen_CMDReact(pkt);
       break;
     
-    case GENERICAPP_CLUSTERID: // Data service
+    // Data service (drone allowed to send only after get approval from queen)
+    case GENERICAPP_CLUSTERID: 
       queen_PERIODICDATA_SERVICE(pkt);
       
 #if defined( WIN32 )

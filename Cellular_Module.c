@@ -8,9 +8,6 @@ Coupling with other module description:
 Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 
 
-Function list:
-
-
   @Author Yiran Tian 2015/3/4
 *********************************************************************/
 
@@ -81,6 +78,7 @@ static uint8 WCDMAModuleFailureTimes = 0;
 // Time Stamp
 uint8 JSON_TimeStamp[16] = {0}; // TimeStamp
 static uint8 JSON_TimeCounter = 60;
+
 static uint8 LEDAvoidControl = 0;
 
 // Module Available
@@ -89,8 +87,7 @@ short queen_Available = NOT_READY;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
-void uartWriteIPINIT(void);
-void setWCDMAoneSecondStepTimer(short, uint8, uint8);
+static void uartWriteIPINIT(void);
 
 /*********************************************************************
  * PUBLIC FUNCTIONS
@@ -481,6 +478,14 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
           WCDMAModule_ReConOverTries --; 
           queen_Available = AVAILABLE; // set queen states parameter
         }
+        
+        // error type3, link already established. Upload directly
+        else if(DISABLE)
+        {
+          myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
+        
+          WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
+        }
       }
       break;
       
@@ -685,7 +690,7 @@ void uartWriteIPINIT(void)
 /*********************************************************************
  * @fn      setWCDMAoneSecondStepTimer
  *
- * @brief   
+ * @brief   Set the parameters in the one second timer.
  *
  * @param   none
  *
