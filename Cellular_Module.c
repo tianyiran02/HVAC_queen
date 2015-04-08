@@ -54,6 +54,8 @@ uint8 WCDMAModuleSTEP = 0;
 // 0-x, indicate the different step in setup
 uint8 WCDMASignalState = NoService;
 // Signal indicator
+static uint8 WCDMA_SignalRecover = 0;
+// if signal recover, set unavailable to available
 
 // ----------------- counter -----------------
 static uint16 WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60/2);
@@ -208,21 +210,47 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
    /* LED2, D3, Signal Indicator LED */
 
   // 1. No Service, LED OFF
-  if(WCDMASignalState == NoService) 
+  if((WCDMASignalState == NoService) || (WCDMASignalState == Hibernate)) 
   {
+    // if queen available, set unavailable to avoid upload
+    if((WCDMAModuleSTEP >= WCDMAsetup_3GReady) && (queen_Available == AVAILABLE))
+    {
+      queen_Available = UNAVAILABLE;
+      WCDMA_SignalRecover = 1;
+    }
     HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // off LED2, internet LED
   }
   
   // 2. Has signal, but services restricted, flash LED
   else if(WCDMASignalState != ValServices)
   {
-    //HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // off LED2
+    if((WCDMAModuleSTEP >= WCDMAsetup_3GReady) && (queen_Available == AVAILABLE))
+    {
+      queen_Available = UNAVAILABLE;
+      WCDMA_SignalRecover = 1;
+    }
     HalLedBlink( HAL_LED_2, 2, 50, 1000 ); // flash 1s
   }
   
   // 3. Signal Normal, LED ON
   else
   {
+    if((WCDMAModuleSTEP >= WCDMAsetup_3GReady) && (WCDMA_SignalRecover) && (queen_Available == UNAVAILABLE))
+    {
+      WCDMA_SignalRecover = 0;
+      queen_Available = AVAILABLE;
+    }
+    
+    // wait for signal while waiting NWTIME RESPONSE. 
+    // Once got signal, set restart waiting time to 20s
+    // Decrease response time when error initial
+    if(WCDMAModuleSTEP == WCDMAsetup_NWTIMEwait)
+    {
+      // set restart timer to a smaller value
+      // the original should be more than this (count down from 120s)
+      WCDMAModule_RestartTimer = 20;
+    }
+    
     HalLedSet (HAL_LED_2, HAL_LED_MODE_OFF); // Service available, enable statu led2 d3
   }
   
@@ -358,7 +386,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   if(strcmp(MU609_TEMP,MU609_SRVST_ACK) == 0) // signal update information 
   {
     /* update signal status */
-    WCDMASignalState = MU609_BUF[9] - 48; // obtain the signal state
+    WCDMASignalState = MU609_BUF[10] - 48; // obtain the signal state
   }
   
   /* If this is not about signal update, then goes to state machine
@@ -396,6 +424,8 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       {
         WCDMAModuleSTEP = WCDMAsetup_NWTIMEwait;
         // Start timer/counter
+        WCDMAModule_RestartTimer = 120;
+        // extra delay, wait for searching signal
       }
       break;
       
