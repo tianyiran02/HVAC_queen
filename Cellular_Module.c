@@ -387,6 +387,12 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   {
     /* update signal status */
     WCDMASignalState = MU609_BUF[10] - 48; // obtain the signal state
+    
+    // MU609 may send two SRVST report in a same time. Detect the second report
+    if(MU609_BUF[15] == 0x5E) // the second '^' symbol
+    {
+      WCDMASignalState =  MU609_BUF[23] - 48; // update again
+    }
   }
   
   /* If this is not about signal update, then goes to state machine

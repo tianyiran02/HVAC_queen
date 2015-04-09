@@ -90,6 +90,9 @@
 #endif
 
 #include "Cellular_Module.h"
+
+// for test, delet later
+#include "BM_StringMatch.h"
    
 /*********************************************************************
  * MACROS
@@ -228,6 +231,19 @@ static void GenericApp_ProcessRtosMessage( void );
  */
 void GenericApp_Init( uint8 task_id )
 {
+  // test only, delete later
+  uint8 a[4] = "ab!@";
+  uint8 b[2] = "!@";
+  uint8 test[2] = {0};
+  
+  BMStringMatching_t testbm;
+  testbm.PatternAddr = b;
+  testbm.PatternLength = 2;
+  testbm.StringAddr = a;
+  testbm.StringLength = 4;
+  testbm.MatchingPoint = test;
+  BM(testbm);
+  
   GenericApp_TaskID = task_id;
   GenericApp_NwkState = DEV_INIT;
   GenericApp_TransID = 0;
