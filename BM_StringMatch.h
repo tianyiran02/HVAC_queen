@@ -10,6 +10,7 @@
 #ifndef BM_STRINGMATCH_H
 #define BM_STRINGMATCH_H
 
+#define NO_OF_CHARS 256
 
 typedef struct
 {
@@ -18,10 +19,9 @@ typedef struct
   uint8          *StringAddr;
   uint8          *PatternAddr;
   uint8          *MatchingPoint;
+  short          MatchFlag;
 } BMStringMatching_t;
 
-void preBmBc(uint8 *, int , uint8 *);
-void suffixes(uint8 *, int , uint8 *);
-void preBmGs(uint8 *, int , uint8 *, int, uint8 *); 
-BMStringMatching_t BM(BMStringMatching_t );
+short BMsearch(BMStringMatching_t);
+
 #endif

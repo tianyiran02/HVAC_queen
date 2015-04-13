@@ -34,6 +34,7 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 
 #include "Cellular_Module.h"
 
+#include "BM_StringMatch.h"
 /*********************************************************************
  * MACROS
  */
@@ -363,9 +364,10 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
 void Cellular_UART(mtOSALSerialData_t *CMDMsg)
 {
   uint8 i = 0;
+  
   char MU609_BUF[45] = {0}; 
   char MU609_TEMP[10] = {0};
-  
+   
 #ifdef REACTDRONE
   uint8 uartbuf;
   uint16 deviceshortaddr = 0;
@@ -374,6 +376,17 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
   // Copy data to buffer
 
+  BMStringMatching_t SVRSTMatching; // This is for SVRST network response matching
+  uint8 SVRSTMatchPoint[5] = {0}; 
+  
+  SVRSTMatching.PatternAddr = MU609_SRVST_ACK; // Initialize SVRST Matching
+  SVRSTMatching.PatternLength = 8;
+  SVRSTMatching.StringAddr = MU609_BUF;
+  SVRSTMatching.StringLength = 45;
+  SVRSTMatching.MatchingPoint = SVRSTMatchPoint;
+  SVRSTMatching.MatchFlag = 0;
+  
+  
   /* Signal detection
    *
    * By receiving SRVST report, the TE will know the signal status
@@ -382,16 +395,19 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
    * 4 - Power saving or hibernated 
    *
    **/
-  osal_memcpy(MU609_TEMP,MU609_BUF,8); // copy the fist 8 char, "^SRVST"
-  if(strcmp(MU609_TEMP,MU609_SRVST_ACK) == 0) // signal update information 
+  if(BMsearch(SVRSTMatching)) // signal update information 
   {
     /* update signal status */
-    WCDMASignalState = MU609_BUF[10] - 48; // obtain the signal state
-    
-    // MU609 may send two SRVST report in a same time. Detect the second report
-    if(MU609_BUF[15] == 0x5E) // the second '^' symbol
+    // update signal using the first matching point
+    WCDMASignalState = MU609_BUF[SVRSTMatchPoint[0] + 10] - 48;
+      
+    // update by other matching point
+    for(i = 1; i <=4; i++)
     {
-      WCDMASignalState =  MU609_BUF[23] - 48; // update again
+      if(SVRSTMatchPoint[i] != 0)
+      {
+        WCDMASignalState = MU609_BUF[SVRSTMatchPoint[i] + 10] - 48;
+      }
     }
   }
   

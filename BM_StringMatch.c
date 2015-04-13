@@ -1,6 +1,6 @@
 /*********************************************************************
   This .c file provide Boyer-Moore String Matching Algorithm. Most 
-  credit goes to ESMAJ website.
+  credit goes to GreeksforGreeks website.
 
   Coupling with other module description:
 
@@ -21,9 +21,6 @@
  * MACROS
  */
 
-#ifndef BMmax
-#define BMmax(a,b) ((a) > (b) ? (a) : (b)) 
-#endif
 
 /*********************************************************************
  * GLOBAL VARIABLES
@@ -34,104 +31,81 @@
  */
 
 /*********************************************************************
- * EXTERNAL FUNCTIONS
- */
-
-/*********************************************************************
  * LOCAL VARIABLES
  */
 
-void preBmBc(uint8 *x, int m, uint8 *bmBc) 
+/*********************************************************************
+ * LOCAL FUNCTIONS
+ */
+static uint8 max (uint8 a, uint8 b) 
+{ return (a > b)? a: b; }
+
+void badCharHeuristic( char *, int, int badchar[NO_OF_CHARS]);
+
+/*********************************************************************
+ * EXTERNAL FUNCTIONS
+ */
+void badCharHeuristic( char *str, int size, int badchar[NO_OF_CHARS])
 {
-   int i;
+    int i;
  
-   for (i = 0; i < m; ++i)
-      bmBc[i] = m;
-   for (i = 0; i < m - 1; ++i)
-      bmBc[x[i]] = m - i - 1;
+    // Initialize all occurrences as -1
+    for (i = 0; i < NO_OF_CHARS; i++)
+         badchar[i] = -1;
+ 
+    // Fill the actual value of last occurrence of a character
+    for (i = 0; i < size; i++)
+         badchar[(int) str[i]] = i;
 }
- 
- 
-void suffixes(uint8 *x, int m, uint8 *suff) 
+
+short BMsearch(BMStringMatching_t BMMatching)
 {
-   int f, g, i;
+    int m = BMMatching.PatternLength;
+    int n = BMMatching.StringLength;
  
-   suff[m - 1] = m;
-   g = m - 1;
-   for (i = m - 2; i >= 0; --i) {
-      if (i > g && suff[i + m - 1 - f] < i - g)
-         suff[i] = suff[i + m - 1 - f];
-      else {
-         if (i < g)
-            g = i;
-         f = i;
-         while (g >= 0 && x[g] == x[g + m - 1 - f])
-            --g;
-         suff[i] = f - g;
-      }
-   }
-}
+    int badchar[NO_OF_CHARS];
  
-void preBmGs(uint8 *x, int m, uint8 *bmGs, int n, uint8 *suff) 
-{
-   int i, j;
-   //int suff[n] = {0};
-   
+    /* Fill the bad character array by calling the preprocessing
+       function badCharHeuristic() for given pattern */
+    badCharHeuristic(BMMatching.PatternAddr, m, badchar);
  
-   suffixes(x, m, suff);
+    int s = 0;  // s is shift of the pattern with respect to text
+    int k = 0;  // k is the index for the BMatching.Matchingpoint structure
+    BMMatching.MatchFlag = 0;
+    while(s <= (n - m))
+    {
+        int j = m-1;
  
-   for (i = 0; i < m; ++i)
-      bmGs[i] = m;
-   j = 0;
-   for (i = m - 1; i >= 0; --i)
-      if (suff[i] == i + 1)
-         for (; j < m - 1 - i; ++j)
-            if (bmGs[j] == m)
-               bmGs[j] = m - 1 - i;
-   for (i = 0; i <= m - 2; ++i)
-      bmGs[m - 1 - suff[i]] = m - 1 - i;
-}
+        /* Keep reducing index j of pattern while characters of
+           pattern and text are matching at this shift s */
+        while(j >= 0 && *(BMMatching.PatternAddr + j) == *(BMMatching.StringAddr + (s + j)))
+            j--;
  
+        /* If the pattern is present at current shift, then index j
+           will become -1 after the above loop */
+        if (j < 0)
+        {
+            *(BMMatching.MatchingPoint + (k++)) = s;
+            BMMatching.MatchFlag = 1;
  
-BMStringMatching_t BM(BMStringMatching_t BMmatching) 
-{
-   int i, j;
-   uint8 *x = BMmatching.StringAddr;
-   int m = BMmatching.StringLength;
-   uint8 *y =BMmatching.PatternAddr;
-   int n = BMmatching.PatternLength;
-   
-   uint8 *bmGs = osal_mem_alloc(n);
-   uint8 *bmBc = osal_mem_alloc(m);
-   uint8 *suff = osal_mem_alloc(n);
-   
-   osal_memset(suff,'0',sizeof(suff));
-   osal_memset(bmGs,'0',sizeof(bmGs));
-   osal_memset(bmBc,'0',sizeof(bmBc));
+            /* Shift the pattern so that the next character in text
+               aligns with the last occurrence of it in pattern.
+               The condition s+m < n is necessary for the case when
+               pattern occurs at the end of text */
+            s += (s+m < n)? m-badchar[*(BMMatching.StringAddr + (s + m))] : 1;
+ 
+        }
+ 
+        else
+            /* Shift the pattern so that the bad character in text
+               aligns with the last occurrence of it in pattern. The
+               max function is used to make sure that we get a positive
+               shift. We may get a negative shift if the last occurrence
+               of bad character in pattern is on the right side of the
+               current character. */
+            s += max(1, j - badchar[*(BMMatching.StringAddr + (s + j))]);
+    }
     
-   /* Preprocessing */
-   preBmGs(x, m, bmGs, n, suff);
-   preBmBc(x, m, bmBc);
- 
-   /* Searching */
-   j = 0;
-   while (j <= n - m) {
-      for (i = m - 1; i >= 0 && x[i] == y[i + j]; --i);
-      if (i < 0) {
-         *(BMmatching.MatchingPoint++) = j;
-         j += bmGs[0];
-      }
-      else
-         j +=  BMmax(bmGs[i],(bmBc[y[i + j]] - m + 1 + i));
-   }
-   
-   // free memery
-   osal_memset(suff,'0',sizeof(suff));
-   osal_memset(bmGs,'0',sizeof(bmGs));
-   osal_memset(bmBc,'0',sizeof(bmBc));
-   osal_mem_free(bmBc);
-   osal_mem_free(bmGs);
-   osal_mem_free(suff);
-   
-   return BMmatching;
+    return BMMatching.MatchFlag;
 }
+
