@@ -50,13 +50,17 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 
 /* Control Related
  */
-
-uint8 WCDMAModuleSTEP = 0; 
 // 0-x, indicate the different step in setup
-uint8 WCDMASignalState = NoService;
+uint8 WCDMAModuleSTEP = 0; 
+
 // Signal indicator
-static uint8 WCDMA_SignalRecover = 0;
+uint8 WCDMASignalState = NoService;
+
 // if signal recover, set unavailable to available
+static uint8 WCDMA_SignalRecover = 0;
+
+// Error Code
+uint8 ErrCode = No_Error;
 
 // ----------------- counter -----------------
 static uint16 WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60/2);
@@ -64,7 +68,8 @@ static uint16 WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60/2);
 
 static uint8 WCDMAModule_RestartTimer = FALSE;
 // After MC send reset CMD, timer start. Once the cellular module restart, 
-// timer clear. If overtime, resend CMD.
+// timer clear. If overtime, resend CMD. 
+// This time can be also used to perform a reset in certain delay.
 
 /* upload time counter and failure counter */
 static uint8 WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
@@ -115,15 +120,58 @@ static void uartWriteIPINIT(void);
 void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeout)
 {
   /* 1. timer between steps.
-   *    1. IPINIT overtime WCDMA_10SDELAY * WCDMAModule_IPINITResend_MAX
+   *    1. Start-ATE0 duration
+   *       After microcontroller received power on message, this timer will start.
+   *       Normally only few second will takes to go through this process. The 
+   *       timer was used to recover system from unknown error.
+   *
+   *       restart MU609;
+   *
+   *    2. NWTIME response waiting
+   *       After power up, the device will automatically connect to the internet
+   *       and obtain the Network time from server. However, if the signal is 
+   *       poor or the local ISP doen't provide NWTIME service, this process 
+   *       will not able to finish. 
+   *       After receiving ATE0 response, this timer will start with a inital 
+   *       time (default 120s). Once the device obtain a valid service, the 
+   *       time will cut to 20s. This will improve the error response time.
+   *
+   *       reset cellular module; 
+   *    3. IPINIT overtime WCDMA_10SDELAY * WCDMAModule_IPINITResend_MAX
+   *       Its normal to have a CME error response even in good signal condition,
+   *       the IPINIT will be resend untill it reach a maximum attempts and then
+   *       Module will reset.
+   *       
    *       resend IPINIT;
    *       reset cellular module;
    *
-   *    2. One upload period WCDMA_SENDTIME * WCDMAModule_ReConOverTries(WCDMA_OVERTIMERESET)
+   *    4. AT push re-send (start a upload process)
+   *       If the Module is in a abnormal condition, i.e processing other CMD, 
+   *       the AT push may not be received by Module. Resend AT command. It the
+   *       Problem doesn't solve, reset the module.
+   *
+   *       resend AT;
+   *       reset cellular module;
+   *
+   *    5. One upload period WCDMA_SENDTIME * WCDMAModule_ReConOverTries(WCDMA_OVERTIMERESET)
+   *       Normally a whole upload will only take few seconds. This timer was 
+   *       design to avoid some unknown situation that will interrupt the upload
+   *       process. Once time out, upload will be abandon. And an error upload
+   *       will be loged. Any success upload after that will indicate that the 
+   *       environment back to normal and will reset the log. Once the error has
+   *       exceed a certain number, the module will reset.
+   *
    *       abandon current upload, wait for next try;
    *       reset cellular module;
    *
-   *    3. IPCLOSE overtime
+   *    6. IPCLOSE overtime
+   *       In poor signal condision, IPCLOSE might fail, and this timer was designed
+   *       to resend IPCLOSE CMD. After certain number of attempts, the module 
+   *       will reset.
+   *
+   *       resent IPCLOSE;
+   *       reset cellular module;
+   *
    */
   if(WCDMAModuleTimerEnable) // timer enable
   {
@@ -131,11 +179,28 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
     
     if(WCDMAModuleTimerCounter == 0) // timeout
     {
-      
       /* react according to different steps
        */
-      // 1. IPINIT sending steps
-      if(WCDMAModuleSTEP == WCDMAsetup_IPINITsend) 
+      
+      // 1.Start-ATE0 duration
+      if((WCDMAModuleSTEP > WCDMAsetup_NotReady) && (WCDMAModuleSTEP < WCDMAsetup_NWTIMEwait))
+      {
+        queen_Reset3GModule(); // reset cellular module
+      }
+      
+      // 2. NWTIME response waiting 
+      else if(WCDMAModuleSTEP == WCDMAsetup_NWTIMEwait)
+      {
+        ErrCode = NWTIMEFail;
+        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter 
+        HalLedBlink( HAL_LED_2, 4, 90, 1000 ); // flash 0.25s/10s/10%
+        
+        // set the restart timer to restart in 10s
+        WCDMAModule_RestartTimer = WCDMA_10SDELAY;
+      }
+      
+      // 3. IPINIT sending steps
+      else if(WCDMAModuleSTEP == WCDMAsetup_IPINITsend) 
       {
         WCDMAModuleFailureTimes --; // how many time it fail?
         
@@ -150,7 +215,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
         } 
       }
       
-      // 2. AT PUSH resend
+      // 4. AT PUSH resend
       else if(WCDMAModuleSTEP == WCDMAsetup_ATGO)
       {
         WCDMAModuleFailureTimes --; // how many time it fail?
@@ -167,9 +232,9 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
         
       }
       
-      // 2. send during time
+      // 5. send during time
       else if((WCDMAModuleSTEP > WCDMAsetup_ATGO) 
-              && (WCDMAModuleSTEP <= WCDMAsetup_IPCLOSEsend))
+              && (WCDMAModuleSTEP < WCDMAsetup_IPCLOSEsend))
       {
         WCDMAModule_ReConOverTries --;
         if(WCDMAModule_ReConOverTries == 0) // if happen more than default times
@@ -178,12 +243,14 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
         }
         else
         {
+          // back to ready status, wait for another try.
           WCDMAModuleSTEP = WCDMAsetup_3GReady; // wait for next try
+          queen_Available = AVAILABLE; 
           setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
         }       
       }
       
-      // 3. IPCLOSE sending step
+      // 6. IPCLOSE sending step
       else if(WCDMAModuleSTEP == WCDMAsetup_IPCLOSEsend)
       {
         WCDMAModuleFailureTimes --; // how many time it fail?
@@ -203,12 +270,35 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   
   /* 2. LED control
    *
+   * If any error occur, error indicator perform in higher priority. If not,
+   * update LED according to current status.
    * LED2, D3, Signal Indicator LED
    * LED4, D2, Cellular Module Status LED
    *
    */
   
-   /* LED2, D3, Signal Indicator LED */
+  /* If any error happen, check the error code can make the device has proper
+     react. This version only contain limited error */
+  // Any error?
+  if(ErrCode)
+  {
+    // For now, do almost nothing. The only error indicator was for NWTIME. And the 
+    // LED flashing is already set in timer(the place detect error).
+    switch(ErrCode)
+    {
+    case NWTIMEFail:
+       HalLedBlink( HAL_LED_2, 4, 90, 1000 ); // flash 0.25s/10s
+       break;
+       
+    default:
+      break;
+    }
+  }
+  
+  // No error, update LED according to status
+  else
+  {
+  /* LED2, D3, Signal Indicator LED */
 
   // 1. No Service, LED OFF
   if((WCDMASignalState == NoService) || (WCDMASignalState == Hibernate)) 
@@ -244,12 +334,12 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
     
     // wait for signal while waiting NWTIME RESPONSE. 
     // Once got signal, set restart waiting time to 20s
-    // Decrease response time when error initial
-    if(WCDMAModuleSTEP == WCDMAsetup_NWTIMEwait)
+    // Decrease response time when non-signal error during initial
+    if((WCDMAModuleSTEP == WCDMAsetup_NWTIMEwait) && (WCDMAModuleTimerCounter > 20))
     {
       // set restart timer to a smaller value
       // the original should be more than this (count down from 120s)
-      WCDMAModule_RestartTimer = 20;
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,0);
     }
     
     HalLedSet (HAL_LED_2, HAL_LED_MODE_OFF); // Service available, enable statu led2 d3
@@ -279,7 +369,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
     else
       LEDAvoidControl --;
   }
-  
+  } // if(ErrCode)
   
   /* 3. check restart timer
    */
@@ -379,9 +469,9 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   BMStringMatching_t SVRSTMatching; // This is for SVRST network response matching
   uint8 SVRSTMatchPoint[5] = {0}; 
   
-  SVRSTMatching.PatternAddr = MU609_SRVST_ACK; // Initialize SVRST Matching
+  SVRSTMatching.PatternAddr = (uint8 *)MU609_SRVST_ACK; // Initialize SVRST Matching
   SVRSTMatching.PatternLength = 8;
-  SVRSTMatching.StringAddr = MU609_BUF;
+  SVRSTMatching.StringAddr = (uint8 *)MU609_BUF;
   SVRSTMatching.StringLength = 45;
   SVRSTMatching.MatchingPoint = SVRSTMatchPoint;
   SVRSTMatching.MatchFlag = 0;
@@ -413,227 +503,239 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   
   /* If this is not about signal update, then goes to state machine
    **/
-  else
+
+  /* Start state machine */
+  switch(WCDMAModuleSTEP)
   {
-    /* Start state machine */
-    switch(WCDMAModuleSTEP)
-    {
-      // -------------------- init -----------------------
-      
-      // 1. p:After power up 
-    case (WCDMAsetup_NotReady): 
-      if(strcmp(MU609_BUF,MU609_READY_MSG) == 0)
-      {
-        WCDMAModule_RestartTimer = WCDMA_RESTARTTIMER; // first timer finish, next stage
-          
-        myBlockingHalUARTWrite(0,MU609_CURC,17); // send CURC
-        WCDMAModuleSTEP = WCDMAsetup_Connected; // change state
-      }
-      break;
-      
-      // 2. p:Received poweron Msg, send CURC
-    case WCDMAsetup_Connected:   
-      if(strcmp(MU609_BUF,MU609_CURC_ACK) == 0)
-      {
-        myBlockingHalUARTWrite(0,MU609_ATE0,6); // send ATE0
-        WCDMAModuleSTEP = WCDMAsetup_ATE0send; // change state  
-      }
-      break;
+    // -------------------- init -----------------------
     
-      // 3.   p:Received 'OK', send ATE0
-    case WCDMAsetup_ATE0send:
-      if(strcmp(MU609_BUF,MU609_ATE0_ACK) == 0)
-      {
-        WCDMAModuleSTEP = WCDMAsetup_NWTIMEwait;
-        // Start timer/counter
-        WCDMAModule_RestartTimer = 120;
-        // extra delay, wait for searching signal
-      }
-      break;
+    // 1. p:After power up 
+  case (WCDMAsetup_NotReady): 
+    if(strcmp(MU609_BUF,MU609_READY_MSG) == 0)
+    {
+      // Restart detected, disable restart timer.
+      WCDMAModule_RestartTimer = FALSE; 
       
-      // 4. p:Received 'OK', wait for NWTIME report
-    case WCDMAsetup_NWTIMEwait:
-      osal_memcpy(MU609_TEMP,MU609_BUF,9);
+      // Start a new timer. Start from here to receive ATE0 response
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,0);
+      
+        
+      myBlockingHalUARTWrite(0,MU609_CURC,17); // send CURC
+      WCDMAModuleSTEP = WCDMAsetup_Connected; // change state
+    }
+    break;
+    
+    // 2. p:Received poweron Msg, send CURC
+  case WCDMAsetup_Connected:   
+    if(strcmp(MU609_BUF,MU609_CURC_ACK) == 0)
+    {
+      myBlockingHalUARTWrite(0,MU609_ATE0,6); // send ATE0
+      WCDMAModuleSTEP = WCDMAsetup_ATE0send; // change state  
+    }
+    break;
+  
+    // 3.   p:Received 'OK', send ATE0
+  case WCDMAsetup_ATE0send:
+    if(strcmp(MU609_BUF,MU609_ATE0_ACK) == 0)
+    {
+      WCDMAModuleSTEP = WCDMAsetup_NWTIMEwait;
+      
+      // Start timer/counter
+      // extra delay, wait for searching signal
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_120SDELAY,0);
+    }
+    break;
+    
+    // 4. p:Received 'OK', wait for NWTIME report
+  case WCDMAsetup_NWTIMEwait:
+    osal_memcpy(MU609_TEMP,MU609_BUF,9);
 
-      if(strcmp(MU609_TEMP,MU609_NWTIME_ACK) == 0) // check NWTIME, update timestamp
+    if(strcmp(MU609_TEMP,MU609_NWTIME_ACK) == 0) // check NWTIME, update timestamp
+    {
+      // Stop previews timer, start new one
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,WCDMAModule_IPINITResend_MAX);
+     
+      JSON_TimeStamp[0] = '2'; // update timestamp
+      JSON_TimeStamp[1] = '0';
+      
+      for(i=2;i<=15;i++)
+        JSON_TimeStamp[i] = MU609_BUF[i+9];
+
+      uartWriteIPINIT(); // send IPINIT
+                 
+      WCDMAModuleSTEP = WCDMAsetup_IPINITsend; //change state
+    }
+    break;
+    
+    // 5. p:Received timestamp, send IPINIT
+  case WCDMAsetup_IPINITsend:
+    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    {
+      setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+      queen_Available = AVAILABLE; // set Queen upload states parameters (may imerge to others)
+      
+      WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state, initialize finish
+    }
+    break;
+    
+    // -------------------- Send -----------------------
+    
+    // 6. p: Received 'OK', initialize finish
+  case WCDMAsetup_ATGO:  
+    if((strcmp(MU609_BUF,MU609_ACK) == 0) && (queen_Available == UNAVAILABLE))
+    {
+      // Start new timer/counter, this is to count the uploading duration time.
+      // Timer ends when send IPCLOSE
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_SENDTIME,0);
+      
+      myBlockingHalUARTWrite(0,MU609_IPOPEN,38); // send IPOPEN
+       
+      WCDMAModuleSTEP = WCDMAsetup_IPOPENsend; // change state
+    }
+    break;
+    
+    // 7. p: Check previos steps, send IPOPEN
+  case WCDMAsetup_IPOPENsend:
+    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    {
+      myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
+      
+      WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
+    }
+    else // error condition
+    {
+      // error happen, jump back, resend IPINIT (May Not Needed!!!!!!!!)
+      /*if(strcmp(MU609_BUF,MU609_ERROR_ACK) == 0)
       {
-        // Put the false here also allow the device recover from no NWTIME response
-        WCDMAModule_RestartTimer = FALSE; // disable restartTimer
-        // Stop timer/counter
-        
-        JSON_TimeStamp[0] = '2'; // update timestamp
-        JSON_TimeStamp[1] = '0';
-        
-        for(i=2;i<=15;i++)
-          JSON_TimeStamp[i] = MU609_BUF[i+9];
-
+        WCDMAModuleSTEP = WCDMAsetup_IPINITsend; // change state
         uartWriteIPINIT(); // send IPINIT
-        
         setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,WCDMAModule_IPINITResend_MAX);
         
-        WCDMAModuleSTEP = WCDMAsetup_IPINITsend; //change state
-      }
-      break;
+        queen_Available = UNAVAILABLE; // set queen unavailable
+      }*/
       
-      // 5. p:Received timestamp, send IPINIT
-    case WCDMAsetup_IPINITsend:
-      if(strcmp(MU609_BUF,MU609_ACK) == 0)
+      // error type2, poor signal. Normal problem. Upload aboard
+      memset(MU609_BUF,0,sizeof(MU609_BUF));
+      osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
+      
+      if(strcmp(MU609_BUF,MU609_CME_ERROR) == 0)
       {
         setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
-        queen_Available = AVAILABLE; // set Queen upload states parameters (may imerge to others)
-        
-        WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state, initialize finish
-      }
-      break;
-      
-      // -------------------- Send -----------------------
-      
-      // 6. p: Received 'OK', initialize finish
-    case WCDMAsetup_ATGO:  
-      if((strcmp(MU609_BUF,MU609_ACK) == 0) && (queen_Available == UNAVAILABLE))
-      {
-        setWCDMAoneSecondStepTimer(ENABLE,WCDMA_SENDTIME,0);// Start new timer/counter
-       
-        myBlockingHalUARTWrite(0,MU609_IPOPEN,38); // send IPOPEN
-         
-        WCDMAModuleSTEP = WCDMAsetup_IPOPENsend; // change state
-      }
-      break;
-      
-      // 7. p: Check previos steps, send IPOPEN
-    case WCDMAsetup_IPOPENsend:
-      if(strcmp(MU609_BUF,MU609_ACK) == 0)
-      {
-        myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
-        
-        WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
-      }
-      else // error condition
-      {
-        // error happen, jump back, resend IPINIT (May Not Needed!!!!!!!!)
-        /*if(strcmp(MU609_BUF,MU609_ERROR_ACK) == 0)
-        {
-          WCDMAModuleSTEP = WCDMAsetup_IPINITsend; // change state
-          uartWriteIPINIT(); // send IPINIT
-          setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,WCDMAModule_IPINITResend_MAX);
-          
-          queen_Available = UNAVAILABLE; // set queen unavailable
-        }*/
-        
-        // error type2, poor signal. Normal problem. Upload aboard
-        memset(MU609_BUF,0,sizeof(MU609_BUF));
-        osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
-        
-        if(strcmp(MU609_BUF,MU609_IPOPEN_ERROR) == 0)
-        {
-          WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-          WCDMAModule_ReConOverTries --; 
-          queen_Available = AVAILABLE; // set queen states parameter
-        }
-        
-        // error type3, link already established. Upload directly
-        else if(DISABLE)
-        {
-          myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
-        
-          WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
-        }
-      }
-      break;
-      
-      // 8. p: Received 'OK', send IPSENDEX
-    case WCDMAsetup_IPSENDEXsend:
-      if(strcmp(MU609_BUF,MU609_ACK) == 0)
-      {
-        myBlockingHalUARTWrite(0,MU609_Sending,100); // send data
-        myBlockingHalUARTWrite(0,&MU609_Sending[100],100);
-        myBlockingHalUARTWrite(0,&MU609_Sending[200],100);
-        myBlockingHalUARTWrite(0,&MU609_Sending[300],33);
-        
-        WCDMAModuleSTEP = WCDMAsetup_OKtoSend; // Change state
-      }
-      else // error condition
-      {
-        memset(MU609_BUF,0,sizeof(MU609_BUF));
-        osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
-        
-        if(strcmp(MU609_BUF,MU609_IPOPEN_ERROR) == 0)
-        {
-          WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-          WCDMAModule_ReConOverTries --; 
-          queen_Available = AVAILABLE; // set queen states parameter
-        }
-      }
-      break;
-      
-      // 9. p: Received 'OK', send data 
-    case WCDMAsetup_OKtoSend:
-      if(strcmp(MU609_BUF,MU609_IPSENDEX_ACK) == 0)
-      {
-        myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
-        setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,10);// Start timer/counter// set resend flag
-        
-        WCDMAModuleSTEP = WCDMAsetup_IPCLOSEsend; // change state
-      }
-      else
-      {
-        memset(MU609_BUF,0,sizeof(MU609_BUF));
-        osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
-        
-        if(strcmp(MU609_BUF,MU609_IPOPEN_ERROR) == 0)
-        {
-          WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-          WCDMAModule_ReConOverTries --; 
-          queen_Available = AVAILABLE; // set queen states parameter
-        }
-      }
-      break;
-      
-      // 10. p: Received IPSENDEX ACK, send IPCLOSE
-    case WCDMAsetup_IPCLOSEsend:
-      if(strcmp(MU609_BUF,MU609_ACK) == 0)
-      {
-        setWCDMAoneSecondStepTimer(DISABLE,0,0); //clear resend flag/counter
-        HalLedBlink( HAL_LED_4, 4, 50, 500 ); // Flash LED, send success
-        LEDAvoidControl = 2; // avoid timer control LED for next 2s
         
         WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-        WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
+        WCDMAModule_ReConOverTries --; 
         queen_Available = AVAILABLE; // set queen states parameter
       }
-      break;
       
-      // Others, update timestamp
-    case WCDMAsetup_TIMESTAMPUPDATE:
-      if(strcmp(MU609_BUF,MU609_ACK) == 0)
+      // error type3, link already established. Upload directly
+      else if(DISABLE)
       {
-        myBlockingHalUARTWrite(0,MU609_NWTIME,12);// send NWTIME
+        // In this case, timer continue
         
-        WCDMAModuleSTEP = WCDMAsetup_TIMESTAMPUPDATES2; // change state
-      }
-      break;
+        myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
       
-      // update timetamp stage 2
-    case WCDMAsetup_TIMESTAMPUPDATES2:
-      osal_memcpy(MU609_TEMP,MU609_BUF,9);
-
-      if(strcmp(MU609_TEMP,MU609_NWTIME_ACK) == 0) // check NWTIME, update timestamp
-      {
-        // Stop timer/counter
-        
-        JSON_TimeStamp[0] = '2'; // update timestamp
-        JSON_TimeStamp[1] = '0';
-        
-        for(i=2;i<=15;i++)
-          JSON_TimeStamp[i] = MU609_BUF[i+9];
-        
-        WCDMAModuleSTEP = WCDMAsetup_3GReady; //change state
-        queen_Available = AVAILABLE; // set queen states parameter
+        WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
       }
-      break;
     }
-  }  
+    break;
     
+    // 8. p: Received 'OK', send IPSENDEX
+  case WCDMAsetup_IPSENDEXsend:
+    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    {
+      // send data
+      myBlockingHalUARTWrite(0,MU609_Sending,100); 
+      myBlockingHalUARTWrite(0,&MU609_Sending[100],100);
+      myBlockingHalUARTWrite(0,&MU609_Sending[200],100);
+      myBlockingHalUARTWrite(0,&MU609_Sending[300],33);
+      
+      WCDMAModuleSTEP = WCDMAsetup_OKtoSend; // Change state
+    }
+    else // error condition
+    {
+      memset(MU609_BUF,0,sizeof(MU609_BUF));
+      osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
+      
+      if(strcmp(MU609_BUF,MU609_CME_ERROR) == 0)
+      {
+        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+        
+        WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
+        WCDMAModule_ReConOverTries --; 
+        queen_Available = AVAILABLE; // set queen states parameter
+      }
+    }
+    break;
+    
+    // 9. p: Received 'OK', send data 
+  case WCDMAsetup_OKtoSend:
+    if(strcmp(MU609_BUF,MU609_IPSENDEX_ACK) == 0)
+    {
+      myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
+      setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,10);// Start timer/counter// set resend flag
+      
+      WCDMAModuleSTEP = WCDMAsetup_IPCLOSEsend; // change state
+    }
+    else
+    {
+      memset(MU609_BUF,0,sizeof(MU609_BUF));
+      osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
+      
+      if(strcmp(MU609_BUF,MU609_CME_ERROR) == 0)
+      {
+        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+        
+        WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
+        WCDMAModule_ReConOverTries --; 
+        queen_Available = AVAILABLE; // set queen states parameter
+      }
+    }
+    break;
+    
+    // 10. p: Received IPSENDEX ACK, send IPCLOSE
+  case WCDMAsetup_IPCLOSEsend:
+    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    {
+      setWCDMAoneSecondStepTimer(DISABLE,0,0); //clear resend flag/counter
+      HalLedBlink( HAL_LED_4, 4, 50, 500 ); // Flash LED, send success
+      LEDAvoidControl = 2; // avoid timer control LED for next 2s
+      
+      WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
+      WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
+      queen_Available = AVAILABLE; // set queen states parameter
+    }
+    break;
+    
+    // Others, update timestamp
+  case WCDMAsetup_TIMESTAMPUPDATE:
+    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    {
+      myBlockingHalUARTWrite(0,MU609_NWTIME,12);// send NWTIME
+      
+      WCDMAModuleSTEP = WCDMAsetup_TIMESTAMPUPDATES2; // change state
+    }
+    break;
+    
+    // update timetamp stage 2
+  case WCDMAsetup_TIMESTAMPUPDATES2:
+    osal_memcpy(MU609_TEMP,MU609_BUF,9);
+
+    if(strcmp(MU609_TEMP,MU609_NWTIME_ACK) == 0) // check NWTIME, update timestamp
+    {
+      // Stop timer/counter
+      
+      JSON_TimeStamp[0] = '2'; // update timestamp
+      JSON_TimeStamp[1] = '0';
+      
+      for(i=2;i<=15;i++)
+        JSON_TimeStamp[i] = MU609_BUF[i+9];
+      
+      WCDMAModuleSTEP = WCDMAsetup_3GReady; //change state
+      queen_Available = AVAILABLE; // set queen states parameter
+    }
+    break;
+  }
+ 
 #ifdef REACTDRONE
     /* Device Control CMD */
   if((CMDMsg->msg[2]) == 0x41)
@@ -722,6 +824,10 @@ void queen_Reset3GModule( void )
  */
 void uartWriteIPINIT(void)
 {
+#ifdef  GIFFGAFF
+        myBlockingHalUARTWrite(0,MU609_IPINIT,26);
+#endif
+  
 #ifdef  LYCAMOBILE
         myBlockingHalUARTWrite(0,MU609_IPINIT,49);
 #endif

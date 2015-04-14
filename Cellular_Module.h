@@ -21,7 +21,9 @@
 #define WCDMA_ATPUSHDELAY       5       // AT push resend delay 5s      
 
 #define WCDMA_10SDELAY                  10 // normal time interval, 10s
+#define WCDMA_20SDELAY                  20 // normal time interval, 20s        
 #define WCDMA_SENDTIME                  60 // acceptable upload time, 60s  
+#define WCDMA_120SDELAY                 120 // normal time interval, 120s        
 
 
 // Cellular module steps
@@ -43,6 +45,11 @@
 #define WCDMAsetup_TIMESTAMPUPDATE      12 // Update timestamp
 #define WCDMAsetup_TIMESTAMPUPDATES2    13 // Update timestamp step 2       
 
+   
+//Error Code
+#define No_Error                0 // No error
+#define NWTIMEFail              1 // Fail to obtain NWTIME, flash signal LED for 0.25s/10s/10% then reset
+   
 #define NOT_READY       3
 #define AVAILABLE       1
 #define UNAVAILABLE     0
@@ -63,6 +70,7 @@
 extern uint8 WCDMAModuleSTEP;
 extern uint8 WCDMASignalState;
 extern short queen_Available;
+extern uint8 ErrCode;
 
 extern uint8 JSON_TimeStamp[16];
 extern uint8 MU609_Sending[333];
@@ -83,6 +91,10 @@ extern uint8 MU609_IPINIT[29];
 
 #ifdef USAMOBILE_WYLESS
 extern uint8 MU609_IPINIT[34];
+#endif
+
+#ifdef GIFFGAFF
+extern uint8 MU609_IPINIT[26];
 #endif
 
 
