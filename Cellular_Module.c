@@ -96,6 +96,7 @@ short queen_Available = NOT_READY;
  * LOCAL FUNCTIONS
  */
 static void uartWriteIPINIT(void);
+static short ACK_BMStringSearch(BMStringMatching_t, const char *, uint8 *);
 
 /*********************************************************************
  * PUBLIC FUNCTIONS
@@ -454,10 +455,12 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
 void Cellular_UART(mtOSALSerialData_t *CMDMsg)
 {
   uint8 i = 0;
+  uint8 matchResultTemp[4] = {0};
   
   char MU609_BUF[45] = {0}; 
-  char MU609_TEMP[10] = {0};
    
+  BMStringMatching_t BMSearchTemp; // This is for the rest
+  
 #ifdef REACTDRONE
   uint8 uartbuf;
   uint16 deviceshortaddr = 0;
@@ -465,16 +468,13 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   
   osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
   // Copy data to buffer
-
-  BMStringMatching_t SVRSTMatching; // This is for SVRST network response matching
-  uint8 SVRSTMatchPoint[5] = {0}; 
   
-  SVRSTMatching.PatternAddr = (uint8 *)MU609_SRVST_ACK; // Initialize SVRST Matching
-  SVRSTMatching.PatternLength = 8;
-  SVRSTMatching.StringAddr = (uint8 *)MU609_BUF;
-  SVRSTMatching.StringLength = 45;
-  SVRSTMatching.MatchingPoint = SVRSTMatchPoint;
-  SVRSTMatching.MatchFlag = 0;
+  BMSearchTemp.PatternAddr = MU609_SRVST_ACK; // Initialize SVRST Matching
+  BMSearchTemp.PatternLength = 8;
+  BMSearchTemp.StringAddr = MU609_BUF;
+  BMSearchTemp.StringLength = 45;
+  BMSearchTemp.MatchingPoint = matchResultTemp;
+  BMSearchTemp.MatchFlag = 0;
   
   
   /* Signal detection
@@ -485,18 +485,18 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
    * 4 - Power saving or hibernated 
    *
    **/
-  if(BMsearch(SVRSTMatching)) // signal update information 
+  if(BMsearch(BMSearchTemp)) // signal update information 
   {
     /* update signal status */
     // update signal using the first matching point
-    WCDMASignalState = MU609_BUF[SVRSTMatchPoint[0] + 10] - 48;
+    WCDMASignalState = MU609_BUF[matchResultTemp[0] + 10] - 48;
       
     // update by other matching point
-    for(i = 1; i <=4; i++)
+    for(i = 1; i <=3; i++)
     {
-      if(SVRSTMatchPoint[i] != 0)
+      if(matchResultTemp[i] != 0)
       {
-        WCDMASignalState = MU609_BUF[SVRSTMatchPoint[i] + 10] - 48;
+        WCDMASignalState = MU609_BUF[matchResultTemp[i] + 10] - 48;
       }
     }
   }
@@ -505,13 +505,16 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
    **/
 
   /* Start state machine */
+  BMSearchTemp.StringAddr = MU609_BUF;
+  BMSearchTemp.StringLength = strlen(MU609_BUF);
+  
   switch(WCDMAModuleSTEP)
   {
-    // -------------------- init -----------------------
+    // -------------------- init ----------------------- 
     
     // 1. p:After power up 
   case (WCDMAsetup_NotReady): 
-    if(strcmp(MU609_BUF,MU609_READY_MSG) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_READY_MSG,matchResultTemp))
     {
       // Restart detected, disable restart timer.
       WCDMAModule_RestartTimer = FALSE; 
@@ -527,7 +530,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 2. p:Received poweron Msg, send CURC
   case WCDMAsetup_Connected:   
-    if(strcmp(MU609_BUF,MU609_CURC_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_CURC_ACK,matchResultTemp))
     {
       myBlockingHalUARTWrite(0,MU609_ATE0,6); // send ATE0
       WCDMAModuleSTEP = WCDMAsetup_ATE0send; // change state  
@@ -536,7 +539,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   
     // 3.   p:Received 'OK', send ATE0
   case WCDMAsetup_ATE0send:
-    if(strcmp(MU609_BUF,MU609_ATE0_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ATE0_ACK,matchResultTemp))
     {
       WCDMAModuleSTEP = WCDMAsetup_NWTIMEwait;
       
@@ -548,9 +551,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 4. p:Received 'OK', wait for NWTIME report
   case WCDMAsetup_NWTIMEwait:
-    osal_memcpy(MU609_TEMP,MU609_BUF,9);
-
-    if(strcmp(MU609_TEMP,MU609_NWTIME_ACK) == 0) // check NWTIME, update timestamp
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_NWTIME_ACK,matchResultTemp)) // check NWTIME, update timestamp
     {
       // Stop previews timer, start new one
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,WCDMAModule_IPINITResend_MAX);
@@ -558,8 +559,9 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       JSON_TimeStamp[0] = '2'; // update timestamp
       JSON_TimeStamp[1] = '0';
       
+      // use the first matching point to obtain the time
       for(i=2;i<=15;i++)
-        JSON_TimeStamp[i] = MU609_BUF[i+9];
+        JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
 
       uartWriteIPINIT(); // send IPINIT
                  
@@ -569,7 +571,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 5. p:Received timestamp, send IPINIT
   case WCDMAsetup_IPINITsend:
-    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
       queen_Available = AVAILABLE; // set Queen upload states parameters (may imerge to others)
@@ -582,7 +584,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 6. p: Received 'OK', initialize finish
   case WCDMAsetup_ATGO:  
-    if((strcmp(MU609_BUF,MU609_ACK) == 0) && (queen_Available == UNAVAILABLE))
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp) && (queen_Available == UNAVAILABLE))
     {
       // Start new timer/counter, this is to count the uploading duration time.
       // Timer ends when send IPCLOSE
@@ -596,7 +598,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 7. p: Check previos steps, send IPOPEN
   case WCDMAsetup_IPOPENsend:
-    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
       
@@ -614,11 +616,8 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         queen_Available = UNAVAILABLE; // set queen unavailable
       }*/
       
-      // error type2, poor signal. Normal problem. Upload aboard
-      memset(MU609_BUF,0,sizeof(MU609_BUF));
-      osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
-      
-      if(strcmp(MU609_BUF,MU609_CME_ERROR) == 0)
+      // error type2, poor signal. Normal problem. Upload aboard   
+      if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR,matchResultTemp))
       {
         setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
         
@@ -641,7 +640,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 8. p: Received 'OK', send IPSENDEX
   case WCDMAsetup_IPSENDEXsend:
-    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       // send data
       myBlockingHalUARTWrite(0,MU609_Sending,100); 
@@ -652,11 +651,8 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       WCDMAModuleSTEP = WCDMAsetup_OKtoSend; // Change state
     }
     else // error condition
-    {
-      memset(MU609_BUF,0,sizeof(MU609_BUF));
-      osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
-      
-      if(strcmp(MU609_BUF,MU609_CME_ERROR) == 0)
+    {     
+      if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR,matchResultTemp))
       {
         setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
         
@@ -669,7 +665,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 9. p: Received 'OK', send data 
   case WCDMAsetup_OKtoSend:
-    if(strcmp(MU609_BUF,MU609_IPSENDEX_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_IPSENDEX_ACK,matchResultTemp))
     {
       myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,10);// Start timer/counter// set resend flag
@@ -677,11 +673,8 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       WCDMAModuleSTEP = WCDMAsetup_IPCLOSEsend; // change state
     }
     else
-    {
-      memset(MU609_BUF,0,sizeof(MU609_BUF));
-      osal_memcpy(MU609_BUF,&CMDMsg->msg[1],12);
-      
-      if(strcmp(MU609_BUF,MU609_CME_ERROR) == 0)
+    {    
+      if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR,matchResultTemp))
       {
         setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
         
@@ -694,7 +687,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // 10. p: Received IPSENDEX ACK, send IPCLOSE
   case WCDMAsetup_IPCLOSEsend:
-    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       setWCDMAoneSecondStepTimer(DISABLE,0,0); //clear resend flag/counter
       HalLedBlink( HAL_LED_4, 4, 50, 500 ); // Flash LED, send success
@@ -708,7 +701,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // Others, update timestamp
   case WCDMAsetup_TIMESTAMPUPDATE:
-    if(strcmp(MU609_BUF,MU609_ACK) == 0)
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       myBlockingHalUARTWrite(0,MU609_NWTIME,12);// send NWTIME
       
@@ -718,9 +711,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     
     // update timetamp stage 2
   case WCDMAsetup_TIMESTAMPUPDATES2:
-    osal_memcpy(MU609_TEMP,MU609_BUF,9);
-
-    if(strcmp(MU609_TEMP,MU609_NWTIME_ACK) == 0) // check NWTIME, update timestamp
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_NWTIME_ACK,matchResultTemp)) // check NWTIME, update timestamp
     {
       // Stop timer/counter
       
@@ -728,11 +719,14 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       JSON_TimeStamp[1] = '0';
       
       for(i=2;i<=15;i++)
-        JSON_TimeStamp[i] = MU609_BUF[i+9];
+        JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
       
       WCDMAModuleSTEP = WCDMAsetup_3GReady; //change state
       queen_Available = AVAILABLE; // set queen states parameter
     }
+    break;
+    
+  default:
     break;
   }
  
@@ -850,7 +844,9 @@ void uartWriteIPINIT(void)
  *
  * @brief   Set the parameters in the one second timer.
  *
- * @param   none
+ * @param       State - ENABLE or DISABLE
+ *              timeInterval - Counter loading time
+ *              allowedFailureTimes - repeatance
  *
  * @return  none
  */
@@ -859,4 +855,30 @@ void setWCDMAoneSecondStepTimer(short State, uint8 timeInterval, uint8 allowedFa
   WCDMAModuleTimerEnable = State;
   WCDMAModuleTimerCounter = timeInterval;
   WCDMAModuleFailureTimes = allowedFailureTimes;
+}
+
+/*********************************************************************
+ * @fn      BMStringSearch
+ *
+ * @brief   Set up structure and call the BMsearch function. 
+ *
+ * @param       BMStructure - the structure used to do BM searching
+ *              pat - pattern address
+ *              string - string address
+ *              matchResult - Maching point result
+ *
+ * @return  
+ */
+short ACK_BMStringSearch(BMStringMatching_t BMStructure, const char *pat, uint8 *matchResult)
+{
+  // clear buffer before use
+  osal_memset(matchResult,'0',sizeof(matchResult));
+    
+  // Configure structure
+  BMStructure.PatternAddr = pat;
+  BMStructure.PatternLength = strlen(pat);
+  BMStructure.MatchingPoint = matchResult;
+  
+  // return matching result
+  return (BMsearch(BMStructure));
 }

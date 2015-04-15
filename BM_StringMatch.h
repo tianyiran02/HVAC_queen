@@ -16,8 +16,8 @@ typedef struct
 {
   int            PatternLength;
   int            StringLength;
-  uint8          *StringAddr;
-  uint8          *PatternAddr;
+  char           *StringAddr;
+  const char     *PatternAddr;
   uint8          *MatchingPoint;
   short          MatchFlag;
 } BMStringMatching_t;
