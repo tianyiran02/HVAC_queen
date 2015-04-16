@@ -173,6 +173,13 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
    *       resent IPCLOSE;
    *       reset cellular module;
    *
+   *    7. NWTIME overtime
+   *       In poor signal condition, the NWTIM might fail, this timer will
+   *       resend NWTIME CMD. After certain number of attempts, the module will
+   *       reset.
+   *    
+   *       resent NWTIME;
+   *       reset cellular module;
    */
   if(WCDMAModuleTimerEnable) // timer enable
   {
@@ -224,7 +231,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
         if(WCDMAModuleFailureTimes) // still trying
         {
           WCDMAModuleTimerCounter = WCDMA_10SDELAY;
-          uartWriteIPINIT(); // re-send IPINIT
+          myBlockingHalUARTWrite(0,MU609_AT,4); // re-send AT
         }
         else // send failed
         {
@@ -266,8 +273,26 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
           queen_Reset3GModule(); // reset cellular module
         } 
       }
+      
+      // 7. NWTIME overtime
+      else if(WCDMAModuleSTEP == WCDMAsetup_TIMESTAMPUPDATE)
+      {
+        WCDMAModuleFailureTimes --; // how many time it fail?
+      
+        if(WCDMAModuleFailureTimes)
+        {
+          WCDMAModuleTimerCounter = WCDMA_20SDELAY; // reload timer
+          myBlockingHalUARTWrite(0,MU609_NWTIME,12);// resend NWTIME 
+        }
+        else
+        {
+          queen_Reset3GModule(); // reset cellular module
+        } 
+      }
     }
   }
+  
+  
   
   /* 2. LED control
    *
@@ -372,6 +397,8 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   }
   } // if(ErrCode)
   
+  
+  
   /* 3. check restart timer
    */
   if(WCDMAModule_RestartTimer)
@@ -383,6 +410,8 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       queen_Reset3GModule();
     }
   }
+  
+  
   
   /* 4. update timestamp
    */
@@ -405,16 +434,19 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
           JSON_TimeStamp[14] = 53;
           JSON_TimeStamp[15] = 57;
           
-          if(queen_Available == AVAILABLE)
+          if((queen_Available == AVAILABLE) && (WCDMAModuleSTEP == WCDMAsetup_3GReady))
           {         
             // set unavailable
             queen_Available = UNAVAILABLE;
             
+            // set timer
+            setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,6); 
+            
             // set steps to time update
             WCDMAModuleSTEP = WCDMAsetup_TIMESTAMPUPDATE;
             
-            // send AT to push
-            myBlockingHalUARTWrite(0,MU609_AT,4);
+            // send NWTIME to push
+            myBlockingHalUARTWrite(0,MU609_NWTIME,12);
           }
           else
           {
@@ -500,9 +532,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       }
     }
   }
-  
-  /* If this is not about signal update, then goes to state machine
-   **/
+
 
   /* Start state machine */
   BMSearchTemp.StringAddr = MU609_BUF;
@@ -513,7 +543,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     // -------------------- init ----------------------- 
     
     // 1. p:After power up 
-  case (WCDMAsetup_NotReady): 
+  case WCDMAsetup_NotReady: 
     if(ACK_BMStringSearch(BMSearchTemp,MU609_READY_MSG,matchResultTemp))
     {
       // Restart detected, disable restart timer.
@@ -563,6 +593,11 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       for(i=2;i<=15;i++)
         JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
 
+      // Code for test!!!!!
+      JSON_TimeStamp[14] = 53;
+      JSON_TimeStamp[15] = 57;
+      // end
+          
       uartWriteIPINIT(); // send IPINIT
                  
       WCDMAModuleSTEP = WCDMAsetup_IPINITsend; //change state
@@ -605,35 +640,29 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
     }
     else // error condition
-    {
-      // error happen, jump back, resend IPINIT (May Not Needed!!!!!!!!)
-      /*if(strcmp(MU609_BUF,MU609_ERROR_ACK) == 0)
-      {
-        WCDMAModuleSTEP = WCDMAsetup_IPINITsend; // change state
-        uartWriteIPINIT(); // send IPINIT
-        setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,WCDMAModule_IPINITResend_MAX);
-        
-        queen_Available = UNAVAILABLE; // set queen unavailable
-      }*/
-      
-      // error type2, poor signal. Normal problem. Upload aboard   
+    { 
       if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR,matchResultTemp))
       {
-        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+        // error type1, link already established. Upload directly
+        if(ACK_BMStringSearch(BMSearchTemp,MU609_IPOPEN_LINKEXIST,matchResultTemp))
+        {
+          // In this case, process continue
+          myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
         
-        WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-        WCDMAModule_ReConOverTries --; 
-        queen_Available = AVAILABLE; // set queen states parameter
-      }
-      
-      // error type3, link already established. Upload directly
-      else if(DISABLE)
-      {
-        // In this case, timer continue
+          WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
+        }
         
-        myBlockingHalUARTWrite(0,MU609_IPSENDEX,21); // send IPSENDEX
-      
-        WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
+        // error type2, poor signal. Normal problem. Upload aboard  
+        else
+        {
+          setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+          
+          WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
+          WCDMAModule_ReConOverTries --; 
+          
+          if(WCDMASignalState == ValServices)
+            queen_Available = AVAILABLE; // set queen states parameter
+        }
       }
     }
     break;
@@ -658,7 +687,9 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         
         WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
         WCDMAModule_ReConOverTries --; 
-        queen_Available = AVAILABLE; // set queen states parameter
+        
+        if(WCDMASignalState == ValServices)
+          queen_Available = AVAILABLE; // set queen states parameter
       }
     }
     break;
@@ -680,7 +711,9 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         
         WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
         WCDMAModule_ReConOverTries --; 
-        queen_Available = AVAILABLE; // set queen states parameter
+        
+        if(WCDMASignalState == ValServices)
+          queen_Available = AVAILABLE; // set queen states parameter
       }
     }
     break;
@@ -695,25 +728,18 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       
       WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
       WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
-      queen_Available = AVAILABLE; // set queen states parameter
-    }
-    break;
-    
-    // Others, update timestamp
-  case WCDMAsetup_TIMESTAMPUPDATE:
-    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
-    {
-      myBlockingHalUARTWrite(0,MU609_NWTIME,12);// send NWTIME
       
-      WCDMAModuleSTEP = WCDMAsetup_TIMESTAMPUPDATES2; // change state
+      if(WCDMASignalState == ValServices)
+        queen_Available = AVAILABLE; // set queen states parameter
     }
     break;
     
-    // update timetamp stage 2
-  case WCDMAsetup_TIMESTAMPUPDATES2:
+    // 12. update timetamp stage 2
+  case WCDMAsetup_TIMESTAMPUPDATE:
     if(ACK_BMStringSearch(BMSearchTemp,MU609_NWTIME_ACK,matchResultTemp)) // check NWTIME, update timestamp
     {
       // Stop timer/counter
+      setWCDMAoneSecondStepTimer(DISABLE,0,0); //clear resend flag/counter
       
       JSON_TimeStamp[0] = '2'; // update timestamp
       JSON_TimeStamp[1] = '0';
@@ -721,8 +747,15 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       for(i=2;i<=15;i++)
         JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
       
+      // code for test!!!
+      JSON_TimeStamp[14] = 53;
+      JSON_TimeStamp[15] = 57;
+      //end
+      
       WCDMAModuleSTEP = WCDMAsetup_3GReady; //change state
-      queen_Available = AVAILABLE; // set queen states parameter
+      
+      if(WCDMASignalState == ValServices)
+        queen_Available = AVAILABLE; // set queen states parameter
     }
     break;
     
@@ -792,7 +825,9 @@ void queen_Reset3GModule( void )
   WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60/2);
   // set restart timer (time to send reset cmd again)
   WCDMAModule_RestartTimer = WCDMA_RESTARTTIMER;  
-
+  // set error code as default - no error
+  ErrCode = No_Error;
+    
   // reset 3g flags
   WCDMAModuleSTEP = WCDMAsetup_NotReady; // 0-x, indicate the different step in setup
   queen_Available = UNAVAILABLE; // set module unavailable

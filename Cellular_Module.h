@@ -14,10 +14,10 @@
  * MACROS
  */
 // Reset Value
-#define WCDMA_OVERTIMERESET     4       // upload failer over 4 times, 3G reset
+#define WCDMA_OVERTIMERESET     2       // upload failer over 2 times, 3G reset
 #define WCDMAModule_IPINITResend_MAX 10 // IPINIT overtime 10 times, undone react
 #define WCDMA_RESTARTTIMER      30      // if not restart in 45s, resend reset cmd
-#define WCDMA_RESETTIMER        4       // Reset 3G Module every 4 hours, largest value, 18hours
+#define WCDMA_RESETTIMER        2       // Reset 3G Module every 2 hours, largest value, 18hours
 #define WCDMA_ATPUSHDELAY       5       // AT push resend delay 5s      
 
 #define WCDMA_10SDELAY                  10 // normal time interval, 10s
@@ -43,7 +43,7 @@
 #define WCDMAsetup_SendFinish           11 // Send finish and success. Cheers! (not realy use)
 // Others
 #define WCDMAsetup_TIMESTAMPUPDATE      12 // Update timestamp
-#define WCDMAsetup_TIMESTAMPUPDATES2    13 // Update timestamp step 2       
+     
 
    
 //Error Code
