@@ -90,18 +90,13 @@
 #endif
 
 #include "Cellular_Module.h"
+#include "Config_APP.h"
 /*********************************************************************
  * MACROS
  */
 
 // For every different configure
-// Maximun drone number
-#define MAXDEVNUM 3 
-#define QUEEN_ID "2F691110"
 
-#define Transducer0Offset   0.00
-#define Transducer1Offset   0.00
-      
 // CMD with drones
 #define DRONE_RESEND_INIT       0x0d
 #define DRONE_DATA_ACK          0x0f
@@ -254,11 +249,6 @@ void GenericApp_Init( uint8 task_id )
 
   // Register the endpoint description with the AF
   afRegister( &GenericApp_epDesc );
-
-  // Start WDT reset timer
-  osal_start_timerEx( GenericApp_TaskID,
-                      GENERICAPP_WDT_CLEAR_EVT,
-                      GENERICAPP_WDT_CLEAR_TIMEOUT );
   
   // restart 3G module if it's already started
   queen_Reset3GModule();
@@ -271,6 +261,13 @@ void GenericApp_Init( uint8 task_id )
 #if defined( IAR_ARMCM3_LM )
   // Register this task with RTOS task initiator
   RTOS_RegisterApp( task_id, GENERICAPP_RTOS_MSG_EVT );
+#endif
+
+#ifdef WDT_IN_PM1
+  // Start WDT reset timer
+  osal_start_timerEx( GenericApp_TaskID,
+                      GENERICAPP_WDT_CLEAR_EVT,
+                      GENERICAPP_WDT_CLEAR_TIMEOUT ); 
 #endif
 }
 
@@ -492,7 +489,6 @@ static void queen_CMDReact(afIncomingMSGPacket_t *Msg)
     {
       if(AddressManageBUF[i] == (Msg->srcAddr.addr.shortAddr))
       {
-        i += (1 + 48);
         bufincluded = 1;
         break;
       }
@@ -509,25 +505,22 @@ static void queen_CMDReact(afIncomingMSGPacket_t *Msg)
         {
           // set flag unavailable
           queen_Available = UNAVAILABLE;
-          
-          Msgbuf[1] = DRONE_SEND_REQ;
+          // tell drone queen is available        
           Msgbuf[2] = AVAILABLE;
-          // Setup for the command's destination address
-          queen_CMD_DstAddr.addrMode = (afAddrMode_t)afAddr16Bit;
-          queen_CMD_DstAddr.endPoint = GENERICAPP_ENDPOINT;
-          queen_CMD_DstAddr.addr.shortAddr = Msg->srcAddr.addr.shortAddr;
         }
         
         /* queen not available, send unavailable msg */
-        else
+        else if(queen_Available == UNAVAILABLE)
         {
-          Msgbuf[1] = DRONE_SEND_REQ;
+          // tell drone queen is unavailable
           Msgbuf[2] = UNAVAILABLE;
-          // Setup for the command's destination address
-          queen_CMD_DstAddr.addrMode = (afAddrMode_t)afAddr16Bit;
-          queen_CMD_DstAddr.endPoint = GENERICAPP_ENDPOINT;
-          queen_CMD_DstAddr.addr.shortAddr = Msg->srcAddr.addr.shortAddr;
         }
+        
+        Msgbuf[1] = DRONE_SEND_REQ;
+        // Setup for the command's destination address
+        queen_CMD_DstAddr.addrMode = (afAddrMode_t)afAddr16Bit;
+        queen_CMD_DstAddr.endPoint = GENERICAPP_ENDPOINT;
+        queen_CMD_DstAddr.addr.shortAddr = Msg->srcAddr.addr.shortAddr;
         
         /* Send msg to Drone */
         if ( AF_DataRequest( &queen_CMD_DstAddr, &GenericApp_epDesc,
@@ -630,7 +623,7 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
   {
     if(AddressManageBUF[i] == (Msg->srcAddr.addr.shortAddr))
     {
-      i += (1 + 48);
+      i += 1;
       bufincluded = 1;
       break;
     }
@@ -671,8 +664,8 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
       for(j = 0;j <= 7; j++)
           MU609_Sending[WCDMA_DATA_DEVICEID + j] = SendingBUF_QueenID[j];      
       
-      MU609_Sending[WCDMA_DATA_DEVICEID + 8] = 0x30;
-      MU609_Sending[WCDMA_DATA_DEVICEID + 9] = i; // Drone Number
+      MU609_Sending[WCDMA_DATA_DEVICEID + 8] = (uint8)(i/10) + 0x30;
+      MU609_Sending[WCDMA_DATA_DEVICEID + 9] = (uint8)(i%10) + 0x30; // Drone Number
       
       // 2. Whether the device contain status information?
       if(temp[3] && 0x80) 

@@ -33,7 +33,7 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 #include "hal_uart.h"
 
 #include "Cellular_Module.h"
-
+#include "Config_APP.h"
 #include "BM_StringMatch.h"
 /*********************************************************************
  * MACROS
@@ -54,7 +54,7 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 uint8 WCDMAModuleSTEP = 0; 
 
 // Signal indicator
-uint8 WCDMASignalState = NoService;
+static uint8 WCDMASignalState = NoService;
 
 // if signal recover, set unavailable to available
 static uint8 WCDMA_SignalRecover = 0;
@@ -330,7 +330,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   if((WCDMASignalState == NoService) || (WCDMASignalState == Hibernate)) 
   {
     // if queen available, set unavailable to avoid upload
-    if((WCDMAModuleSTEP >= WCDMAsetup_3GReady) && (queen_Available == AVAILABLE))
+    if(WCDMAModuleSTEP >= WCDMAsetup_3GReady)
     {
       queen_Available = UNAVAILABLE;
       WCDMA_SignalRecover = 1;
@@ -341,7 +341,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   // 2. Has signal, but services restricted, flash LED
   else if(WCDMASignalState != ValServices)
   {
-    if((WCDMAModuleSTEP >= WCDMAsetup_3GReady) && (queen_Available == AVAILABLE))
+    if(WCDMAModuleSTEP >= WCDMAsetup_3GReady)
     {
       queen_Available = UNAVAILABLE;
       WCDMA_SignalRecover = 1;
@@ -358,7 +358,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       queen_Available = AVAILABLE;
     }
     
-    // wait for signal while waiting NWTIME RESPONSE. 
+    // wait for signal while waiting NWTIME RESPONSE at initial stage. 
     // Once got signal, set restart waiting time to 20s
     // Decrease response time when non-signal error during initial
     if((WCDMAModuleSTEP == WCDMAsetup_NWTIMEwait) && (WCDMAModuleTimerCounter > 20))
@@ -551,7 +551,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       
       // Start a new timer. Start from here to receive ATE0 response
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,0);
-      
         
       myBlockingHalUARTWrite(0,MU609_CURC,17); // send CURC
       WCDMAModuleSTEP = WCDMAsetup_Connected; // change state
@@ -592,11 +591,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       // use the first matching point to obtain the time
       for(i=2;i<=15;i++)
         JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
-
-      // Code for test!!!!!
-      JSON_TimeStamp[14] = 53;
-      JSON_TimeStamp[15] = 57;
-      // end
           
       uartWriteIPINIT(); // send IPINIT
                  
@@ -746,11 +740,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       
       for(i=2;i<=15;i++)
         JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
-      
-      // code for test!!!
-      JSON_TimeStamp[14] = 53;
-      JSON_TimeStamp[15] = 57;
-      //end
       
       WCDMAModuleSTEP = WCDMAsetup_3GReady; //change state
       
