@@ -96,7 +96,8 @@ short queen_Available = NOT_READY;
  * LOCAL FUNCTIONS
  */
 static void uartWriteIPINIT(void);
-static short ACK_BMStringSearch(BMStringMatching_t, const char *, uint8 *);
+static short ACK_BMStringSearch(BMStringMatching_t, char const __code *, uint8 *);
+static uint8 codeToRamSizeof(const char __code * );
 
 /*********************************************************************
  * PUBLIC FUNCTIONS
@@ -488,6 +489,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
 {
   uint8 i = 0;
   uint8 matchResultTemp[4] = {0};
+  char tempPatSRVST[9] = {0};
   
   char MU609_BUF[45] = {0}; 
    
@@ -501,7 +503,10 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
   // Copy data to buffer
   
-  BMSearchTemp.PatternAddr = MU609_SRVST_ACK; // Initialize SVRST Matching
+  osal_memcpy(tempPatSRVST,MU609_SRVST_ACK,8);
+  // Copy patern value from code to memory
+  
+  BMSearchTemp.PatternAddr = tempPatSRVST; // Initialize SVRST Matching
   BMSearchTemp.PatternLength = 8;
   BMSearchTemp.StringAddr = MU609_BUF;
   BMSearchTemp.StringLength = 45;
@@ -893,16 +898,42 @@ void setWCDMAoneSecondStepTimer(short State, uint8 timeInterval, uint8 allowedFa
  *
  * @return  
  */
-short ACK_BMStringSearch(BMStringMatching_t BMStructure, const char *pat, uint8 *matchResult)
+static short ACK_BMStringSearch(BMStringMatching_t BMStructure, char const __code *pat, uint8 *matchResult)
 {
+  char tempPat[20] = {0};
+    
+  // copy const char value from code to memory
+  osal_memcpy(tempPat,pat,codeToRamSizeof(pat));
+  
   // clear buffer before use
   osal_memset(matchResult,'0',sizeof(matchResult));
     
   // Configure structure
-  BMStructure.PatternAddr = pat;
-  BMStructure.PatternLength = strlen(pat);
+  BMStructure.PatternAddr = tempPat;
+  BMStructure.PatternLength = strlen(tempPat);
   BMStructure.MatchingPoint = matchResult;
   
   // return matching result
   return (BMsearch(BMStructure));
+}
+
+
+
+/*********************************************************************
+ * @fn      codeToRamSizeof
+ *
+ * @brief   get the size of constants from code 
+ *
+ * @param   codeAddr - code pointer
+ *
+ * @return  uint8 - size of constants
+ */
+static uint8 codeToRamSizeof(const char __code * codeAddr)
+{
+  uint8 size = 0;
+
+  for(;(*codeAddr) != 0;codeAddr++)
+    size++;
+  
+  return size;
 }

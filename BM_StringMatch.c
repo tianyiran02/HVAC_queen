@@ -40,12 +40,12 @@
 static uint8 max (uint8 a, uint8 b) 
 { return (a > b)? a: b; }
 
-void badCharHeuristic( const char *, int, int badchar[NO_OF_CHARS]);
+void badCharHeuristic( char *, int, int badchar[NO_OF_CHARS]);
 
 /*********************************************************************
  * EXTERNAL FUNCTIONS
  */
-void badCharHeuristic( const char *str, int size, int badchar[NO_OF_CHARS])
+void badCharHeuristic( char *str, int size, int badchar[NO_OF_CHARS])
 {
     int i;
  

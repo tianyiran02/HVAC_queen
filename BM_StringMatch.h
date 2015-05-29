@@ -10,14 +10,14 @@
 #ifndef BM_STRINGMATCH_H
 #define BM_STRINGMATCH_H
 
-#define NO_OF_CHARS 256
+#define NO_OF_CHARS 151
 
 typedef struct
 {
   int            PatternLength;
   int            StringLength;
   char           *StringAddr;
-  const char     *PatternAddr;
+  char           *PatternAddr;
   uint8          *MatchingPoint;
   short          MatchFlag;
 } BMStringMatching_t;
