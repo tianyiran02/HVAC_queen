@@ -500,7 +500,10 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   uint16 deviceshortaddr = 0;
 #endif  
   
-  osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
+  if((CMDMsg->msg[0]) <= 45) // prevent msg too long and damage other data
+    osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
+  else
+    osal_memcpy(MU609_BUF,&CMDMsg->msg[1],44);
   // Copy data to buffer
   
   osal_memcpy(tempPatSRVST,MU609_SRVST_ACK,8);

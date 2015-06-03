@@ -746,7 +746,7 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
     // change status
     WCDMAModuleSTEP = WCDMAsetup_ATGO; 
     // Timer, at push resend timer
-    setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,10);// Start timer/counter
+    setWCDMAoneSecondStepTimer(ENABLE,WCDMA_ATPUSHDELAY,10);// Start timer/counter
       
   }// if(bufincluded)
   
