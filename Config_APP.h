@@ -12,7 +12,7 @@
 
 /*********** Essential ***************/
 // Maximun drone number
-#define MAXDEVNUM 10 
+#define MAXDEVNUM 4 
 // Queen ID
 #define QUEEN_ID "2F691220"
 

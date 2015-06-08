@@ -39,7 +39,6 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
  * MACROS
  */
 
-
 /*********************************************************************
  * EXTERNAL VARIABLES
  */
@@ -50,6 +49,8 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 
 /* Control Related
  */
+// temperary solution for IPCLOSE send delay
+short setFlagSendIPCLOSE = 0;
 // 0-x, indicate the different step in setup
 uint8 WCDMAModuleSTEP = 0; 
 
@@ -87,7 +88,7 @@ static uint8 WCDMAModuleFailureTimes = 0;
 uint8 JSON_TimeStamp[16] = {0}; // TimeStamp
 static uint8 JSON_TimeCounter = 60;
 
-static uint8 LEDAvoidControl = 0;
+static short LEDAvoidControl = 0;
 
 // Module Available
 short queen_Available = NOT_READY;
@@ -467,6 +468,9 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
     if(queen_Available == AVAILABLE)
     {
       queen_Reset3GModule(); // reset 3G
+#ifdef RESETQUEEN
+      resetQueen = 1;
+#endif
     }
     else
       WCDMAModule_ResetTimer = 10; // If cellular busy, check 10s later
@@ -674,7 +678,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       // send data
-      myBlockingHalUARTWrite(0,MU609_Sending,100); 
+      myBlockingHalUARTWrite(0,MU609_Sending,100); // send data
       myBlockingHalUARTWrite(0,&MU609_Sending[100],100);
       myBlockingHalUARTWrite(0,&MU609_Sending[200],100);
       myBlockingHalUARTWrite(0,&MU609_Sending[300],33);
@@ -700,7 +704,12 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   case WCDMAsetup_OKtoSend:
     if(ACK_BMStringSearch(BMSearchTemp,MU609_IPSENDEX_ACK,matchResultTemp))
     {
-      myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
+      // IPCLOSE send delay
+      // Currently use WDT to delay. Temperary solution.
+      setFlagSendIPCLOSE = 1;
+      HalUARTSuspend();
+      // end
+      
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,10);// Start timer/counter// set resend flag
       
       WCDMAModuleSTEP = WCDMAsetup_IPCLOSEsend; // change state

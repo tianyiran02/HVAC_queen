@@ -100,7 +100,10 @@ extern UINT16 GenericApp_ProcessEvent( byte task_id, UINT16 events );
 /*********************************************************************
  * EXTERNAL VARIABLES
  */
-
+#ifdef RESETQUEEN
+extern short resetQueen;
+// flag set when needs to reset Queen
+#endif
 
 /*********************************************************************
 *********************************************************************/

@@ -63,11 +63,14 @@
 extern uint8 WCDMAModuleSTEP;
 extern short queen_Available;
 extern uint8 ErrCode;
+extern short setFlagSendIPCLOSE;
 
 extern uint8 JSON_TimeStamp[16];
-extern uint8 MU609_Sending[333];
 
 extern uint8 MU609_AT[4];
+extern uint8 MU609_IPCLOSE[14];
+extern uint8  __xdata MU609_Sending[333];
+
 /* below are IPINIT */
 #ifdef LYCAMOBILE
 extern uint8 MU609_IPINIT[49];

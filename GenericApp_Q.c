@@ -95,13 +95,6 @@
  * MACROS
  */
 
-// For every different configure
-
-// CMD with drones
-#define DRONE_RESEND_INIT       0x0d
-#define DRONE_DATA_ACK          0x0f
-#define DRONE_SEND_REQ          0x0a
-
 // Sending Buffer related
 #define WCDMA_DATA_DEVICEID       68
 #define WCDMA_DATA_DEVICEID_L     10 //2,4+6
@@ -123,6 +116,13 @@
 
 #define WCDMA_DATA_TIME           237 //232,234+6-3
 #define WCDMA_DATA_TIME_L         16  
+
+// For every different configure
+
+// CMD with drones
+#define DRONE_RESEND_INIT       0x0d
+#define DRONE_DATA_ACK          0x0f
+#define DRONE_SEND_REQ          0x0a
 
 /*********************************************************************
  * CONSTANTS
@@ -163,6 +163,10 @@ endPointDesc_t GenericApp_epDesc;
 /*********************************************************************
  * EXTERNAL VARIABLES
  */
+#ifdef RESETQUEEN
+short resetQueen = 0;
+// flag set when needs to reset Queen
+#endif
 
 /*********************************************************************
  * EXTERNAL FUNCTIONS
@@ -222,9 +226,11 @@ static void GenericApp_ProcessRtosMessage( void );
  */
 void GenericApp_Init( uint8 task_id )
 { 
+  uint8 j = 0;
   GenericApp_TaskID = task_id;
   GenericApp_NwkState = DEV_INIT;
   GenericApp_TransID = 0;
+  uint8 SendingBUF_QueenID[8] = QUEEN_ID;
   
   // Device hardware initialization can be added here or in main() (Zmain.c).
   // If the hardware is application specific - add it here.
@@ -236,10 +242,18 @@ void GenericApp_Init( uint8 task_id )
   HalLedSet (HAL_LED_3, HAL_LED_MODE_OFF); // LED3, D1 positive logic
   HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // LED2, D3 negative logic
   
+#ifdef RESETQUEEN
+  resetQueen = 0; // Inital, clear flag
+#endif
+      
   // Initialize UART
   MT_UartInit ();
   MT_UartRegisterTaskID(task_id);
 
+  // modify the Queen ID
+  for(j = 0;j <= 7; j++)
+      MU609_Sending[WCDMA_DATA_DEVICEID + j] = SendingBUF_QueenID[j];  
+  
   // Fill out the endpoint description.
   GenericApp_epDesc.endPoint = GENERICAPP_ENDPOINT;
   GenericApp_epDesc.task_id = &GenericApp_TaskID;
@@ -287,7 +301,16 @@ void GenericApp_Init( uint8 task_id )
 uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
 {
   afIncomingMSGPacket_t *MSGpkt; 
-  
+
+#ifdef RESETQUEEN
+  if(!resetQueen) // if not reset Queen
+  {
+    // WDT clear timer     
+    WDCTL |= WDCLP1; 
+    WDCTL |= WDCLP2;
+  }
+#endif
+   
   if ( events & SYS_EVENT_MSG )
   {
     MSGpkt = (afIncomingMSGPacket_t *)osal_msg_receive( GenericApp_TaskID );
@@ -355,9 +378,30 @@ uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
    */
   if(events & GENERICAPP_WDT_CLEAR_EVT)
   {
-    // clear timer     
-    WDCTL |= WDCLP1; 
-    WDCTL |= WDCLP2; 
+    
+#ifdef RESETQUEEN
+    if(!resetQueen) // if not reset Queen
+    {
+      // WDT clear timer     
+      WDCTL |= WDCLP1; 
+      WDCTL |= WDCLP2;
+    }
+#endif
+    
+    // temperary solution for delay ipclose SENDING
+    if(setFlagSendIPCLOSE)
+    {
+      setFlagSendIPCLOSE ++;
+      if(setFlagSendIPCLOSE >= 6)
+      {
+        myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
+        setFlagSendIPCLOSE = 0;
+        HalUARTResume();
+        // clear timer     
+        WDCTL |= WDCLP1; 
+        WDCTL |= WDCLP2; 
+      }
+    }
     
     // reload timer 
     osal_start_timerEx( GenericApp_TaskID,
@@ -596,18 +640,14 @@ static void queen_HandleUART(mtOSALSerialData_t *CMDMsg)
  */
 static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
 {
-  uint8 i,j = 0;
+  uint8 i,j,tempNum = 0;
   short bufincluded = 0;
+  float b = 0;
   uint8 temp[25] = {0};
   uint8 Msgbuf[3] = {0x23,0x00,0x00};
-  float b;
-  uint8 tempNum;
-  
-  //Adjust here to modifiy the Queen ID
-  uint8 SendingBUF_QueenID[8] = QUEEN_ID;
   
   osal_memcpy(temp,&Msg->cmd.Data[0],Msg->cmd.Data[2]);
-  
+ 
   /* Decide whether wrong receive */
   j = temp[temp[2] - 1];
   temp[temp[2] - 1] = 0;
@@ -660,10 +700,7 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
       /* put data into sending buffer */
       HalLedBlink( HAL_LED_3, 40, 50, 50 );
       
-      // 1. modify the ID part
-      for(j = 0;j <= 7; j++)
-          MU609_Sending[WCDMA_DATA_DEVICEID + j] = SendingBUF_QueenID[j];      
-      
+      // 1. modify the ID part  
       MU609_Sending[WCDMA_DATA_DEVICEID + 8] = (uint8)(i/10) + 0x30;
       MU609_Sending[WCDMA_DATA_DEVICEID + 9] = (uint8)(i%10) + 0x30; // Drone Number
       
