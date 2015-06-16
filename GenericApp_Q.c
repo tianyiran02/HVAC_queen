@@ -164,7 +164,7 @@ endPointDesc_t GenericApp_epDesc;
  * EXTERNAL VARIABLES
  */
 #ifdef RESETQUEEN
-short resetQueen = 0;
+uint8 resetQueen = 0;
 // flag set when needs to reset Queen
 #endif
 
@@ -392,7 +392,7 @@ uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
     if(setFlagSendIPCLOSE)
     {
       setFlagSendIPCLOSE ++;
-      if(setFlagSendIPCLOSE >= 6)
+      if(setFlagSendIPCLOSE >= 10)
       {
         myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
         setFlagSendIPCLOSE = 0;
@@ -483,7 +483,7 @@ static void queen_CMDReact(afIncomingMSGPacket_t *Msg)
   uint8 i = 0;
   uint8 temp[15] = {0};
   uint8 Msgbuf[3] = {0x23,0x00,0x00};
-  short bufincluded = 0;
+  uint8 bufincluded = 0;
   
   osal_memcpy(temp,&Msg->cmd.Data[0],3);
   
@@ -641,7 +641,7 @@ static void queen_HandleUART(mtOSALSerialData_t *CMDMsg)
 static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
 {
   uint8 i,j,tempNum = 0;
-  short bufincluded = 0;
+  uint8 bufincluded = 0;
   float b = 0;
   uint8 temp[25] = {0};
   uint8 Msgbuf[3] = {0x23,0x00,0x00};

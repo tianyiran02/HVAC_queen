@@ -61,9 +61,9 @@
  * EXTERNAL VARIABLES
  */
 extern uint8 WCDMAModuleSTEP;
-extern short queen_Available;
+extern uint8 queen_Available;
 extern uint8 ErrCode;
-extern short setFlagSendIPCLOSE;
+extern uint8 setFlagSendIPCLOSE;
 
 extern uint8 JSON_TimeStamp[16];
 
@@ -120,5 +120,5 @@ extern void Cellular_OneSecondTimerServer( byte, uint32, uint32);
 /*
  * 1 second system timer service function, essential to control MU609 
  */
-extern void setWCDMAoneSecondStepTimer(short, uint8, uint8);
+extern void setWCDMAoneSecondStepTimer(uint8, uint8, uint8);
 #endif

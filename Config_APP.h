@@ -21,7 +21,7 @@
 // Reset Value
 #define WCDMA_OVERTIMERESET     2       // upload failer over 2 times, 3G reset
 #define WCDMAModule_IPINITResend_MAX 10 // IPINIT overtime 10 times, undone react
-#define WCDMA_RESTARTTIMER      30      // if not restart in 30s, resend reset cmd
+#define WCDMA_RESTARTTIMER      20      // if not restart in 20s, resend reset cmd
 #define WCDMA_RESETTIMER        5       // Reset 3G Module every 5 hours, largest value, 18hours
 #define WCDMA_ATPUSHDELAY       5       // AT push resend delay 5s   
 

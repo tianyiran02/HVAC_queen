@@ -69,7 +69,7 @@ extern "C"
   
 // Send Message Timeout
 #define GENERICAPP_MU609_WAIT_TIMEOUT           1000     // Delay 1 seconds
-#define GENERICAPP_WDT_CLEAR_TIMEOUT            500      // Every 500 ms  
+#define GENERICAPP_WDT_CLEAR_TIMEOUT            250      // Every 250 ms  
   
 // Application Events (OSAL) - These are bit weighted definitions.     
 #define GENERICAPP_MU609_WAIT_EVT       0x0001
@@ -101,7 +101,7 @@ extern UINT16 GenericApp_ProcessEvent( byte task_id, UINT16 events );
  * EXTERNAL VARIABLES
  */
 #ifdef RESETQUEEN
-extern short resetQueen;
+extern uint8 resetQueen;
 // flag set when needs to reset Queen
 #endif
 

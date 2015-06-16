@@ -50,7 +50,7 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 /* Control Related
  */
 // temperary solution for IPCLOSE send delay
-short setFlagSendIPCLOSE = 0;
+uint8 setFlagSendIPCLOSE = 0;
 // 0-x, indicate the different step in setup
 uint8 WCDMAModuleSTEP = 0; 
 
@@ -64,7 +64,7 @@ static uint8 WCDMA_SignalRecover = 0;
 uint8 ErrCode = No_Error;
 
 // ----------------- counter -----------------
-static uint16 WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60/2);
+unsigned int WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
 // After device setup, cellular module will automatically restart every setting time
 
 static uint8 WCDMAModule_RestartTimer = FALSE;
@@ -78,7 +78,7 @@ static uint8 WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET;
 // than setting time, one connection over time ocour. If it happen more than
 // WCDMA_OVERTIMERESET times, cellular module restart.
 
-static short WCDMAModuleTimerEnable = FALSE;
+static uint8 WCDMAModuleTimerEnable = FALSE;
 static uint8 WCDMAModuleTimerCounter = 0;
 static uint8 WCDMAModuleFailureTimes = 0;
 
@@ -88,16 +88,16 @@ static uint8 WCDMAModuleFailureTimes = 0;
 uint8 JSON_TimeStamp[16] = {0}; // TimeStamp
 static uint8 JSON_TimeCounter = 60;
 
-static short LEDAvoidControl = 0;
+static uint8 LEDAvoidControl = 0;
 
 // Module Available
-short queen_Available = NOT_READY;
+uint8 queen_Available = NOT_READY;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
 static void uartWriteIPINIT(void);
-static short ACK_BMStringSearch(BMStringMatching_t, char const __code *, uint8 *);
+static uint8 ACK_BMStringSearch(BMStringMatching_t, char const __code *, uint8 *);
 static uint8 codeToRamSizeof(const char __code * );
 
 /*********************************************************************
@@ -246,7 +246,11 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       else if((WCDMAModuleSTEP > WCDMAsetup_ATGO) 
               && (WCDMAModuleSTEP < WCDMAsetup_IPCLOSEsend))
       {
-        WCDMAModule_ReConOverTries --;
+        if(WCDMAModule_ReConOverTries >= 1)
+          WCDMAModule_ReConOverTries --;
+        else
+          WCDMAModule_ReConOverTries = 0;
+        
         if(WCDMAModule_ReConOverTries == 0) // if happen more than default times
         {
           queen_Reset3GModule(); // reset cellular module
@@ -267,6 +271,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       
         if(WCDMAModuleFailureTimes)
         {
+          HalUARTResume();
           WCDMAModuleTimerCounter = WCDMA_10SDELAY; // reload timer
           myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // re-send IPCLOSE
         }
@@ -463,14 +468,14 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   /* 5. Reset Cellular Module every setting time
    */
   WCDMAModule_ResetTimer --;
-  if(!WCDMAModule_ResetTimer) // If cellular not busy, reset immediantly
+  if((!WCDMAModule_ResetTimer) || (!WCDMAModule_ReConOverTries)) 
   {
-    if(queen_Available == AVAILABLE)
+    if(queen_Available == AVAILABLE)// If cellular not busy, reset immediantly
     {
-      queen_Reset3GModule(); // reset 3G
 #ifdef RESETQUEEN
       resetQueen = 1;
 #endif
+      queen_Reset3GModule(); // reset 3G
     }
     else
       WCDMAModule_ResetTimer = 10; // If cellular busy, check 10s later
@@ -498,11 +503,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   char MU609_BUF[45] = {0}; 
    
   BMStringMatching_t BMSearchTemp; // This is for the rest
-  
-#ifdef REACTDRONE
-  uint8 uartbuf;
-  uint16 deviceshortaddr = 0;
-#endif  
   
   if((CMDMsg->msg[0]) <= 45) // prevent msg too long and damage other data
     osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
@@ -605,7 +605,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
           
       uartWriteIPINIT(); // send IPINIT
-                 
+
       WCDMAModuleSTEP = WCDMAsetup_IPINITsend; //change state
     }
     break;
@@ -658,13 +658,25 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
           WCDMAModuleSTEP = WCDMAsetup_IPSENDEXsend; // change state
         }
         
-        // error type2, poor signal. Normal problem. Upload aboard  
+        // error type2, link expire, resend IPINIT 
+        else if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR_NOTOPEN,matchResultTemp))
+        {
+          uartWriteIPINIT(); // resend IPINIT
+          
+          WCDMAModuleSTEP = WCDMAsetup_ATGO;
+        }
+        
+        // error type3, poor signal. Normal problem. Upload aboard  
         else
         {
           setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
           
           WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-          WCDMAModule_ReConOverTries --; 
+          
+          if(WCDMAModule_ReConOverTries >= 1)
+            WCDMAModule_ReConOverTries --;
+          else
+            WCDMAModule_ReConOverTries = 0;
           
           if(WCDMASignalState == ValServices)
             queen_Available = AVAILABLE; // set queen states parameter
@@ -678,9 +690,12 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp))
     {
       // send data
-      myBlockingHalUARTWrite(0,MU609_Sending,100); // send data
-      myBlockingHalUARTWrite(0,&MU609_Sending[100],100);
-      myBlockingHalUARTWrite(0,&MU609_Sending[200],100);
+      myBlockingHalUARTWrite(0,MU609_Sending,50); // send data
+      myBlockingHalUARTWrite(0,&MU609_Sending[50],50);
+      myBlockingHalUARTWrite(0,&MU609_Sending[100],50);
+      myBlockingHalUARTWrite(0,&MU609_Sending[150],50);
+      myBlockingHalUARTWrite(0,&MU609_Sending[200],50);
+      myBlockingHalUARTWrite(0,&MU609_Sending[250],50);
       myBlockingHalUARTWrite(0,&MU609_Sending[300],33);
       
       WCDMAModuleSTEP = WCDMAsetup_OKtoSend; // Change state
@@ -692,7 +707,11 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
         
         WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-        WCDMAModule_ReConOverTries --; 
+        
+        if(WCDMAModule_ReConOverTries >= 1)
+          WCDMAModule_ReConOverTries --;
+        else
+          WCDMAModule_ReConOverTries = 0;
         
         if(WCDMASignalState == ValServices)
           queen_Available = AVAILABLE; // set queen states parameter
@@ -721,7 +740,11 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
         
         WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-        WCDMAModule_ReConOverTries --; 
+        
+        if(WCDMAModule_ReConOverTries >= 1)
+          WCDMAModule_ReConOverTries --;
+        else
+          WCDMAModule_ReConOverTries = 0;
         
         if(WCDMASignalState == ValServices)
           queen_Available = AVAILABLE; // set queen states parameter
@@ -828,7 +851,7 @@ void queen_Reset3GModule( void )
   // reload reconnect failure reset times (2 times default)
   WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET;
   // auto restart 3G module every setting time
-  WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60/2);
+  WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
   // set restart timer (time to send reset cmd again)
   WCDMAModule_RestartTimer = WCDMA_RESTARTTIMER;  
   // set error code as default - no error
@@ -891,7 +914,7 @@ void uartWriteIPINIT(void)
  *
  * @return  none
  */
-void setWCDMAoneSecondStepTimer(short State, uint8 timeInterval, uint8 allowedFailureTimes)
+void setWCDMAoneSecondStepTimer(uint8 State, uint8 timeInterval, uint8 allowedFailureTimes)
 {
   WCDMAModuleTimerEnable = State;
   WCDMAModuleTimerCounter = timeInterval;
@@ -910,7 +933,7 @@ void setWCDMAoneSecondStepTimer(short State, uint8 timeInterval, uint8 allowedFa
  *
  * @return  
  */
-static short ACK_BMStringSearch(BMStringMatching_t BMStructure, char const __code *pat, uint8 *matchResult)
+static uint8 ACK_BMStringSearch(BMStringMatching_t BMStructure, char const __code *pat, uint8 *matchResult)
 {
   char tempPat[20] = {0};
     

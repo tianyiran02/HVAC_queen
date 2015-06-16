@@ -58,7 +58,7 @@ void badCharHeuristic( char *str, int size, int badchar[NO_OF_CHARS])
          badchar[(int) str[i]] = i;
 }
 
-short BMsearch(BMStringMatching_t BMMatching)
+uint8 BMsearch(BMStringMatching_t BMMatching)
 {
     int m = BMMatching.PatternLength;
     int n = BMMatching.StringLength;
