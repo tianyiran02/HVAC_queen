@@ -14,7 +14,7 @@
 // Maximun drone number
 #define MAXDEVNUM 4 
 // Queen ID
-#define QUEEN_ID "2F691220"
+#define QUEEN_ID "2F701220"
 
 
 /********* Detail ***********/

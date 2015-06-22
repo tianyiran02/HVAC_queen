@@ -587,12 +587,15 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       // Start timer/counter
       // extra delay, wait for searching signal
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_120SDELAY,0);
+      
+      // Test Version Modify, send AT to push, not use Timestamp anymore
+      myBlockingHalUARTWrite(0,MU609_AT,4);
     }
     break;
     
     // 4. p:Received 'OK', wait for NWTIME report
   case WCDMAsetup_NWTIMEwait:
-    if(ACK_BMStringSearch(BMSearchTemp,MU609_NWTIME_ACK,matchResultTemp)) // check NWTIME, update timestamp
+    if(ACK_BMStringSearch(BMSearchTemp,MU609_ACK,matchResultTemp)) // check NWTIME, update timestamp
     {
       // Stop previews timer, start new one
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_10SDELAY,WCDMAModule_IPINITResend_MAX);
@@ -602,7 +605,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       
       // use the first matching point to obtain the time
       for(i=2;i<=15;i++)
-        JSON_TimeStamp[i] = MU609_BUF[matchResultTemp[0] + i + 9];
+        JSON_TimeStamp[i] = 0x30;
           
       uartWriteIPINIT(); // send IPINIT
 
