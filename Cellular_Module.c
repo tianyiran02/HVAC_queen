@@ -38,6 +38,7 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
 /*********************************************************************
  * MACROS
  */
+#define RESET_3GMODULE_CONDITION        15      // used to allow 1s reset
 
 /*********************************************************************
  * EXTERNAL VARIABLES
@@ -62,6 +63,9 @@ static uint8 WCDMA_SignalRecover = 0;
 
 // Error Code
 uint8 ErrCode = No_Error;
+
+// Reset 3G module if not response CFUN CMD for 10 tries
+static uint8 resetKeyModule = 0;
 
 // ----------------- counter -----------------
 unsigned int WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
@@ -187,6 +191,8 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   {
     WCDMAModuleTimerCounter --;
     
+    
+    // start stat machine
     if(WCDMAModuleTimerCounter == 0) // timeout
     {
       /* react according to different steps
@@ -412,9 +418,47 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   {
     WCDMAModule_RestartTimer --;
     
-    if(!WCDMAModule_RestartTimer) // If timeout reset cellular module
+    // recover p0.7 logic 1 after 1s trigger reset
+    if(resetKeyModule == RESET_3GMODULE_CONDITION)
     {
-      queen_Reset3GModule();
+      resetKeyModule = 0;
+      P0 |= 0x80; // set P0.7 '1'
+    }
+    
+    if(!WCDMAModule_RestartTimer) // If timeout reset cellular module
+    {    
+      // less than WCDMA_CFUNRESET (defult value '10') tries, reset by CFUN CMD
+      if(resetKeyModule <= WCDMA_CFUNRESET) 
+      {
+        resetKeyModule ++;
+        queen_Reset3GModule();
+      }
+      // else try to reset by hardware
+      else
+      {
+        P0 &= ~(0x80); // set P0.7 '0'
+        resetKeyModule = RESET_3GMODULE_CONDITION;
+        
+        // set parameters as init state
+        // reload reconnect failure reset times (2 times default)
+        WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET;
+        // auto restart 3G module every setting time
+        WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
+        // set restart timer (time to send reset cmd again)
+        WCDMAModule_RestartTimer = WCDMA_RESTARTTIMER;  
+        // set error code as default - no error
+        ErrCode = No_Error;
+          
+        // reset 3g flags
+        WCDMAModuleSTEP = WCDMAsetup_NotReady; // 0-x, indicate the different step in setup
+        queen_Available = UNAVAILABLE; // set module unavailable
+        
+        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter  
+        
+        // off LED
+        HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // LED2, D3 negative logic
+        HalLedSet (HAL_LED_4, HAL_LED_MODE_ON); // LED4, D2 negative logic
+      }
     }
   }
   
@@ -560,6 +604,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     {
       // Restart detected, disable restart timer.
       WCDMAModule_RestartTimer = FALSE; 
+      resetKeyModule = FALSE;
       
       // Start a new timer. Start from here to receive ATE0 response
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,0);

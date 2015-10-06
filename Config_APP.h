@@ -24,5 +24,6 @@
 #define WCDMA_RESTARTTIMER      20      // if not restart in 20s, resend reset cmd
 #define WCDMA_RESETTIMER        5       // Reset 3G Module every 5 hours, largest value, 18hours
 #define WCDMA_ATPUSHDELAY       5       // AT push resend delay 5s   
+#define WCDMA_CFUNRESET         10      // AT+CFUN no responed 10 times, 3g reset.
 
 #endif

@@ -39,18 +39,27 @@
 
 /*********************************************************************
 
-    D1 - LED3 : Zigbee Network Indicator
+    D1 - LED3, P1.0 : Zigbee Network Indicator
+     
       
-    D2 - LED4 : Cellular Status Indicator
+    D2 - LED4, P1.1 : Cellular Status Indicator
       Not detect cellular module: LED off
       Detected module, initializing: Flashing in 1s cycle
       Normal Status: LED on
       Finish a upload: LED flash in 0.5s/2s
     
-    D3 - LED2 : Signal Indicator
+    D3 - LED2, P1.4 : Signal Indicator
       No Signal, LED ON
       Has signal, but services restricted, flash LED
       Signal Normal, LED ON
+
+    KEY0 - P0.6
+    HUAWEI RESET - P0.7
+    TEMP_END - p0.0
+    CURRENT_END - P0.1
+    HPRESS_END - P0.4
+    LPRESS_END - P0.5
+    
     
 *********************************************************************/
 
@@ -241,6 +250,12 @@ void GenericApp_Init( uint8 task_id )
   HalLedSet (HAL_LED_4, HAL_LED_MODE_ON); // LED4, D2 negative logic 
   HalLedSet (HAL_LED_3, HAL_LED_MODE_OFF); // LED3, D1 positive logic
   HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // LED2, D3 negative logic
+  
+  // config the HUAWEI RESET PIN
+  P0 |= 0x80; // set P0.7 as 1
+  P0INP &= ~(0x80); // set P0.7 pull up/down 
+  P2INP &= ~(0x20); // select as pull up        
+  P0DIR |= 0x80; // set P0.7 output        
   
 #ifdef RESETQUEEN
   resetQueen = 0; // Inital, clear flag
