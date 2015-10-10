@@ -252,7 +252,7 @@ void GenericApp_Init( uint8 task_id )
   HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // LED2, D3 negative logic
   
   // config the HUAWEI RESET PIN
-  P0 |= 0x80; // set P0.7 as 1
+  P0 &= ~(0x80); // set P0.7 '0'. Reset module at beginning
   P0INP &= ~(0x80); // set P0.7 pull up/down 
   P2INP &= ~(0x20); // select as pull up        
   P0DIR |= 0x80; // set P0.7 output        
@@ -281,6 +281,8 @@ void GenericApp_Init( uint8 task_id )
   
   // restart 3G module if it's already started
   queen_Reset3GModule();
+  P0 |= 0x80; // set P0.7 as 1. Use the command process time delay to triger 
+              // 3G module reset pulse.
   
   // Update the display
 #if defined ( LCD_SUPPORTED )
@@ -404,10 +406,12 @@ uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
 #endif
     
     // temperary solution for delay ipclose SENDING
+    // the reason doing this is to prevent incoming TCP/IP data overflow 
+    // CC2530.
     if(setFlagSendIPCLOSE)
     {
       setFlagSendIPCLOSE ++;
-      if(setFlagSendIPCLOSE >= 10)
+      if(setFlagSendIPCLOSE >= WCDMA_UART_SUSTIME)
       {
         myBlockingHalUARTWrite(0,MU609_IPCLOSE,14); // send IPCLOSE
         setFlagSendIPCLOSE = 0;

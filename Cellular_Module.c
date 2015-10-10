@@ -808,6 +808,14 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
       WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
       
+      // upload process will result in a few seconds delay in timestamp, 
+      // error in counting times. To aovid that, a TIMESTAMP_OFFSET seconds
+      // time offset will be used to correct the error.
+      if(JSON_TimeCounter > TIMESTAMP_OFFSET) // method 1, shift 
+        JSON_TimeCounter -= TIMESTAMP_OFFSET;
+      else // method 2, set to 1
+        JSON_TimeCounter = 1;
+      
       if(WCDMASignalState == ValServices)
         queen_Available = AVAILABLE; // set queen states parameter
     }
