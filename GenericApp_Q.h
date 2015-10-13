@@ -69,7 +69,7 @@ extern "C"
   
 // Send Message Timeout
 #define GENERICAPP_MU609_WAIT_TIMEOUT           1000     // Delay 1 seconds
-#define GENERICAPP_WDT_CLEAR_TIMEOUT            250      // Every 250 ms  
+#define GENERICAPP_WDT_CLEAR_TIMEOUT            125      // Every 125 ms  
   
 // Application Events (OSAL) - These are bit weighted definitions.     
 #define GENERICAPP_MU609_WAIT_EVT       0x0001

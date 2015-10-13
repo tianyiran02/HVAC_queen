@@ -48,54 +48,57 @@ Lower level: UART must provide myBlockingHalUARTWrite(;;) function.
  */
 #include "AT_CMDdata.h" // all the CMD is in this h-file
 
-/* Control Related
- */
+// ----------------- Control Related ----------------- 
 // temperary solution for IPCLOSE send delay
 uint8 setFlagSendIPCLOSE = 0;
 // 0-x, indicate the different step in setup
 uint8 WCDMAModuleSTEP = 0; 
-
-// Signal indicator
-static uint8 WCDMASignalState = NoService;
-
-// if signal recover, set unavailable to available
-static uint8 WCDMA_SignalRecover = 0;
-
 // Error Code
 uint8 ErrCode = No_Error;
+// Module Available
+uint8 queen_Available = NOT_READY;
 
+
+// ----------------- others ----------------- 
+// Time Stamp
+uint8 JSON_TimeStamp[16] = {0}; // TimeStamp
+
+
+/*********************************************************************
+ * LOCAL VARIABLES
+ */
+
+// ----------------- Control Related -----------------
+// Signal indicator
+static uint8 WCDMASignalState = NoService;
+// if signal recover, set unavailable to available
+static uint8 WCDMA_SignalRecover = 0;
 // Reset 3G module if not response CFUN CMD for 10 tries
 static uint8 resetKeyModule = 0;
+// 1s Timer enable
+static uint8 WCDMAModuleTimerEnable = FALSE;
 
-// ----------------- counter -----------------
-unsigned int WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
+// ----------------- Counter -----------------
 // After device setup, cellular module will automatically restart every setting time
+static unsigned int WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
 
-static uint8 WCDMAModule_RestartTimer = FALSE;
 // After MC send reset CMD, timer start. Once the cellular module restart, 
 // timer clear. If overtime, resend CMD. 
 // This time can be also used to perform a reset in certain delay.
+static uint8 WCDMAModule_RestartTimer = WCDMA_RESTARTTIMER;
 
 /* upload time counter and failure counter */
-static uint8 WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
 // Timer start immediantly after start uploading process. If upload takes more
 // than setting time, one connection over time ocour. If it happen more than
 // WCDMA_OVERTIMERESET times, cellular module restart.
+static uint8 WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
 
-static uint8 WCDMAModuleTimerEnable = FALSE;
 static uint8 WCDMAModuleTimerCounter = 0;
 static uint8 WCDMAModuleFailureTimes = 0;
 
-// ----------------- flags ----------------- 
-
-// Time Stamp
-uint8 JSON_TimeStamp[16] = {0}; // TimeStamp
 static uint8 JSON_TimeCounter = 60;
 
 static uint8 LEDAvoidControl = 0;
-
-// Module Available
-uint8 queen_Available = NOT_READY;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -190,7 +193,6 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
   if(WCDMAModuleTimerEnable) // timer enable
   {
     WCDMAModuleTimerCounter --;
-    
     
     // start stat machine
     if(WCDMAModuleTimerCounter == 0) // timeout
@@ -425,7 +427,8 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       P0 |= 0x80; // set P0.7 '1'
     }
     
-    if(!WCDMAModule_RestartTimer) // If timeout reset cellular module
+    // If timeout send CMD to reset cellular module
+    if(!WCDMAModule_RestartTimer) 
     {    
       // less than WCDMA_CFUNRESET (defult value '10') tries, reset by CFUN CMD
       if(resetKeyModule <= WCDMA_CFUNRESET) 
@@ -436,8 +439,22 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       // else try to reset by hardware
       else
       {
+        // Sometimes the problem is caused by cc2530 which can not receive UART
+        // package. In that case, for better performance, the reset here will
+        // reset both cellular module and cc2530.
+        resetQueen = TRUE;
+        /*
+        // trigger reset
         P0 &= ~(0x80); // set P0.7 '0'
         resetKeyModule = RESET_3GMODULE_CONDITION;
+        
+        // set UART Fail bit
+        // if UART Fail already set, 20 times CFUN sent. Reset Queen to recover
+        if(resetUARTFail == TRUE)
+          resetQueen = TRUE;
+        // else, set Fail bit
+        else
+          resetUARTFail = TRUE;
         
         // set parameters as init state
         // reload reconnect failure reset times (2 times default)
@@ -458,6 +475,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
         // off LED
         HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // LED2, D3 negative logic
         HalLedSet (HAL_LED_4, HAL_LED_MODE_ON); // LED4, D2 negative logic
+        */
       }
     }
   }
@@ -605,6 +623,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       // Restart detected, disable restart timer.
       WCDMAModule_RestartTimer = FALSE; 
       resetKeyModule = FALSE;
+  
       
       // Start a new timer. Start from here to receive ATE0 response
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,0);
