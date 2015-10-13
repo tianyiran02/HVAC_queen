@@ -443,39 +443,6 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
         // package. In that case, for better performance, the reset here will
         // reset both cellular module and cc2530.
         resetQueen = TRUE;
-        /*
-        // trigger reset
-        P0 &= ~(0x80); // set P0.7 '0'
-        resetKeyModule = RESET_3GMODULE_CONDITION;
-        
-        // set UART Fail bit
-        // if UART Fail already set, 20 times CFUN sent. Reset Queen to recover
-        if(resetUARTFail == TRUE)
-          resetQueen = TRUE;
-        // else, set Fail bit
-        else
-          resetUARTFail = TRUE;
-        
-        // set parameters as init state
-        // reload reconnect failure reset times (2 times default)
-        WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET;
-        // auto restart 3G module every setting time
-        WCDMAModule_ResetTimer = (WCDMA_RESETTIMER*60*60);
-        // set restart timer (time to send reset cmd again)
-        WCDMAModule_RestartTimer = WCDMA_RESTARTTIMER;  
-        // set error code as default - no error
-        ErrCode = No_Error;
-          
-        // reset 3g flags
-        WCDMAModuleSTEP = WCDMAsetup_NotReady; // 0-x, indicate the different step in setup
-        queen_Available = UNAVAILABLE; // set module unavailable
-        
-        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter  
-        
-        // off LED
-        HalLedSet (HAL_LED_2, HAL_LED_MODE_ON); // LED2, D3 negative logic
-        HalLedSet (HAL_LED_4, HAL_LED_MODE_ON); // LED4, D2 negative logic
-        */
       }
     }
   }
@@ -607,7 +574,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     }
   }
 
-
   /* Start state machine */
   BMSearchTemp.StringAddr = MU609_BUF;
   BMSearchTemp.StringLength = strlen(MU609_BUF);
@@ -623,7 +589,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       // Restart detected, disable restart timer.
       WCDMAModule_RestartTimer = FALSE; 
       resetKeyModule = FALSE;
-  
       
       // Start a new timer. Start from here to receive ATE0 response
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_20SDELAY,0);
