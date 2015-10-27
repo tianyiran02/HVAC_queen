@@ -25,9 +25,9 @@
 #define WCDMA_RESETTIMER        5       // Reset 3G Module every 5 hours, largest value, 18hours
 #define WCDMA_ATPUSHDELAY       5       // AT push resend delay 5s   
 #define WCDMA_CFUNRESET         10      // AT+CFUN no responed 10 times, 3g reset.
-#define WCDMA_UART_SUSTIME      30      // Suspend UART for 30 * WDT time after send data. avoid overflow
+#define WCDMA_UART_SUSTIME      40      // Suspend UART for 40 * WDT time after send data. avoid overflow
 
 // Others
-#define TIMESTAMP_OFFSET        3       // Timestamp offset, 3s per upload
+#define TIMESTAMP_OFFSET        0       // Timestamp offset, 0s per upload
 
 #endif

@@ -36,8 +36,9 @@
 #define WCDMAsetup_SendFinish           11 // Send finish and success. Cheers! (not realy use)
 // Others
 #define WCDMAsetup_TIMESTAMPUPDATE      12 // Update timestamp
-     
 
+#define No_valid_UART_Msg               20 // No valid data from UART
+#define WCDMAsetup_upload_fail          21 // unexpected error, upload failed    
    
 //Error Code
 #define No_Error                0 // No error
@@ -105,7 +106,7 @@ extern uint8 MU609_IPINIT[26];
 /*
  * Cellular main control function, put in UART Msg service. 
  */
-extern void Cellular_UART(mtOSALSerialData_t *);
+extern uint8 Cellular_UART(mtOSALSerialData_t *);
 
 /*
  * Cellular module reset function, send reset CMD and clear flags 

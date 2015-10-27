@@ -49,6 +49,7 @@ extern "C"
  * INCLUDES
  */
 #include "ZComDef.h"
+#include "Config_APP.h"
 
 /*********************************************************************
  * CONSTANTS
@@ -75,6 +76,35 @@ extern "C"
 #define GENERICAPP_MU609_WAIT_EVT       0x0001
 #define GENERICAPP_WDT_CLEAR_EVT        0x0002
   
+// CMD with drones
+#define DRONE_RESEND_INIT       0x0d
+#define DRONE_DATA_ACK          0x0f
+#define DRONE_SUCCESS_ACK       0x08
+#define DRONE_FAIL_ACK          0x04
+#define DRONE_SEND_REQ          0x0a
+   
+// Sending Buffer related
+#define WCDMA_DATA_DEVICEID       68
+#define WCDMA_DATA_DEVICEID_L     10 //2,4+6
+
+#define WCDMA_DATA_STATUS         98 //90,92+6
+#define WCDMA_DATA_STATUS_L       1
+
+#define WCDMA_DATA_HPRESS         126 //118,120+6
+#define WCDMA_DATA_HPRESS_L       4
+
+#define WCDMA_DATA_LPRESS         156 //149,151+6-1
+#define WCDMA_DATA_LPRESS_L       4
+
+#define WCDMA_DATA_CURRENT        181 //175,177+6-2
+#define WCDMA_DATA_CURRENT_L      4
+
+#define WCDMA_DATA_TEMP           210 //204,206+6-2
+#define WCDMA_DATA_TEMP_L         4
+
+#define WCDMA_DATA_TIME           237 //232,234+6-3
+#define WCDMA_DATA_TIME_L         16  
+   
 #if defined( IAR_ARMCM3_LM )
 #define GENERICAPP_RTOS_MSG_EVT       0x0002
 #endif  
@@ -101,8 +131,8 @@ extern UINT16 GenericApp_ProcessEvent( byte task_id, UINT16 events );
  * EXTERNAL VARIABLES
  */
 #ifdef RESETQUEEN
-extern uint8 resetQueen;
 // flag set when needs to reset Queen
+extern uint8 resetQueen;
 #endif
 
 /*********************************************************************

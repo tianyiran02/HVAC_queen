@@ -104,34 +104,6 @@
  * MACROS
  */
 
-// Sending Buffer related
-#define WCDMA_DATA_DEVICEID       68
-#define WCDMA_DATA_DEVICEID_L     10 //2,4+6
-
-#define WCDMA_DATA_STATUS         98 //90,92+6
-#define WCDMA_DATA_STATUS_L       1
-
-#define WCDMA_DATA_HPRESS         126 //118,120+6
-#define WCDMA_DATA_HPRESS_L       4
-
-#define WCDMA_DATA_LPRESS         156 //149,151+6-1
-#define WCDMA_DATA_LPRESS_L       4
-
-#define WCDMA_DATA_CURRENT        181 //175,177+6-2
-#define WCDMA_DATA_CURRENT_L      4
-
-#define WCDMA_DATA_TEMP           210 //204,206+6-2
-#define WCDMA_DATA_TEMP_L         4
-
-#define WCDMA_DATA_TIME           237 //232,234+6-3
-#define WCDMA_DATA_TIME_L         16  
-
-// For every different configure
-
-// CMD with drones
-#define DRONE_RESEND_INIT       0x0d
-#define DRONE_DATA_ACK          0x0f
-#define DRONE_SEND_REQ          0x0a
 
 /*********************************************************************
  * CONSTANTS
@@ -190,9 +162,14 @@ byte GenericApp_TaskID;   // Task ID for internal task/event processing
 
 devStates_t GenericApp_NwkState;
 
-byte GenericApp_TransID;  // This is the unique message ID (counter)
+// This is the unique message ID (counter)
+byte GenericApp_TransID;  
 
-uint16 AddressManageBUF[MAXDEVNUM] = {0};  // Address Manage buffer
+// currently uploading Drone ID (1-n)
+static uint8 currentDrone;
+
+// Address Manage buffer
+static uint16 AddressManageBUF[MAXDEVNUM] = {0}; 
 
 afAddrType_t queen_CMD_DstAddr;
 // end
@@ -539,7 +516,8 @@ static void queen_CMDReact(afIncomingMSGPacket_t *Msg)
     {
       // Error occurred in request to send.
     }
-      
+    
+    // update address buffer
     AddressManageBUF[Msg->cmd.Data[2] - 1] = Msg->srcAddr.addr.shortAddr;
     HalLedBlink( HAL_LED_3, 4, 50, 500 );
   }
@@ -644,7 +622,64 @@ static void queen_CMDReact(afIncomingMSGPacket_t *Msg)
  */
 static void queen_HandleUART(mtOSALSerialData_t *CMDMsg)
 {
-  Cellular_UART(CMDMsg);
+  uint8 temp = 0;
+  uint8 Msgbuf[3] = {0};
+  
+  // handle UART Msg
+  temp = Cellular_UART(CMDMsg);
+  
+  if((temp == WCDMAsetup_SendFinish) || (temp == WCDMAsetup_upload_fail)){
+    // update status
+    if(temp == WCDMAsetup_SendFinish){
+      // change state 
+      WCDMAModuleSTEP = WCDMAsetup_3GReady; 
+    }
+    
+    // prepare for Msg
+    Msgbuf[0] = 0x23;
+    Msgbuf[2] = AVAILABLE;
+    
+    // Setup for the command's destination address
+    queen_CMD_DstAddr.addrMode = (afAddrMode_t)afAddr16Bit;
+    queen_CMD_DstAddr.endPoint = GENERICAPP_ENDPOINT;
+    queen_CMD_DstAddr.addr.shortAddr = AddressManageBUF[currentDrone - 1];
+          
+    // following process according to result
+    switch(temp){
+      // upload fail, send fail ACK
+      case WCDMAsetup_upload_fail:
+        Msgbuf[1] = DRONE_FAIL_ACK;
+        break;
+        
+      // if IPCLOSE sent, upload success.
+      case WCDMAsetup_SendFinish:
+        if(currentDrone != 0)
+        {
+          Msgbuf[1] = DRONE_SUCCESS_ACK;
+        }
+        break;
+        
+      default:
+        break;
+    }
+    
+    // Send CMD
+    if ( AF_DataRequest( &queen_CMD_DstAddr, &GenericApp_epDesc,
+                         QUEEN_CMD_CLUSTERID,
+                         3,
+                         Msgbuf,
+                         &GenericApp_TransID,
+                         AF_DISCV_ROUTE,
+                         AF_DEFAULT_RADIUS ) == afStatus_SUCCESS )
+    {
+      // reset currentDrone
+      currentDrone = 0;
+    }
+    else
+    {
+      // Error occurred in request to send.
+    }
+  } 
 }
 
 
@@ -683,6 +718,7 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
     if(AddressManageBUF[i] == (Msg->srcAddr.addr.shortAddr))
     {
       i += 1;
+      currentDrone = i;
       bufincluded = 1;
       break;
     }
@@ -720,8 +756,9 @@ static void queen_PERIODICDATA_SERVICE( afIncomingMSGPacket_t *Msg )
       HalLedBlink( HAL_LED_3, 40, 50, 50 );
       
       // 1. modify the ID part  
-      MU609_Sending[WCDMA_DATA_DEVICEID + 8] = (uint8)(i/10) + 0x30;
-      MU609_Sending[WCDMA_DATA_DEVICEID + 9] = (uint8)(i%10) + 0x30; // Drone Number
+      MU609_Sending[WCDMA_DATA_DEVICEID + 8] = (uint8)(currentDrone/10) + 0x30;
+      // Drone Number
+      MU609_Sending[WCDMA_DATA_DEVICEID + 9] = (uint8)(currentDrone%10) + 0x30; 
       
       // 2. Whether the device contain status information?
       if(temp[3] && 0x80) 

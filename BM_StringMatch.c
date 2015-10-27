@@ -1,6 +1,6 @@
 /*********************************************************************
-  This .c file provide Boyer-Moore String Matching Algorithm. Most 
-  credit goes to GreeksforGreeks website.
+  This .c file provide Boyer-Moore String Matching Algorithm.  
+  Credit goes to GreeksforGreeks website.
 
   Coupling with other module description:
 

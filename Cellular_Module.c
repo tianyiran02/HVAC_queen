@@ -106,6 +106,7 @@ static uint8 LEDAvoidControl = 0;
 static void uartWriteIPINIT(void);
 static uint8 ACK_BMStringSearch(BMStringMatching_t, char const __code *, uint8 *);
 static uint8 codeToRamSizeof(const char __code * );
+static void errorResponseWCDMA( void );
 
 /*********************************************************************
  * PUBLIC FUNCTIONS
@@ -446,8 +447,7 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
       }
     }
   }
-  
-  
+   
   
   /* 4. update timestamp
    */
@@ -521,9 +521,9 @@ void Cellular_OneSecondTimerServer( byte TaskID, uint32 Evt_ID, uint32 Evt_Timeo
  *
  * @param   none
  *
- * @return  none
+ * @return  current status
  */
-void Cellular_UART(mtOSALSerialData_t *CMDMsg)
+uint8 Cellular_UART(mtOSALSerialData_t *CMDMsg)
 {
   uint8 i = 0;
   uint8 matchResultTemp[4] = {0};
@@ -531,24 +531,27 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
   
   char MU609_BUF[45] = {0}; 
    
-  BMStringMatching_t BMSearchTemp; // This is for the rest
+  // This is for the rest
+  BMStringMatching_t BMSearchTemp; 
   
-  if((CMDMsg->msg[0]) <= 45) // prevent msg too long and damage other data
+  // prevent msg too long and damage other data
+  if((CMDMsg->msg[0]) <= 45) 
     osal_memcpy(MU609_BUF,&CMDMsg->msg[1],CMDMsg->msg[0]);
   else
+    // Copy data to buffer
     osal_memcpy(MU609_BUF,&CMDMsg->msg[1],44);
-  // Copy data to buffer
   
-  osal_memcpy(tempPatSRVST,MU609_SRVST_ACK,8);
+  
   // Copy patern value from code to memory
+  osal_memcpy(tempPatSRVST,MU609_SRVST_ACK,8);
   
-  BMSearchTemp.PatternAddr = tempPatSRVST; // Initialize SVRST Matching
+  // Initialize SVRST Matching
+  BMSearchTemp.PatternAddr = tempPatSRVST; 
   BMSearchTemp.PatternLength = 8;
   BMSearchTemp.StringAddr = MU609_BUF;
   BMSearchTemp.StringLength = 45;
   BMSearchTemp.MatchingPoint = matchResultTemp;
   BMSearchTemp.MatchFlag = 0;
-  
   
   /* Signal detection
    *
@@ -596,7 +599,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       myBlockingHalUARTWrite(0,MU609_CURC,17); // send CURC
       WCDMAModuleSTEP = WCDMAsetup_Connected; // change state
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 2. p:Received poweron Msg, send CURC
   case WCDMAsetup_Connected:   
@@ -605,7 +608,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       myBlockingHalUARTWrite(0,MU609_ATE0,6); // send ATE0
       WCDMAModuleSTEP = WCDMAsetup_ATE0send; // change state  
     }
-    break;
+    return WCDMAModuleSTEP;
   
     // 3.   p:Received 'OK', send ATE0
   case WCDMAsetup_ATE0send:
@@ -617,7 +620,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       // extra delay, wait for searching signal
       setWCDMAoneSecondStepTimer(ENABLE,WCDMA_120SDELAY,0);
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 4. p:Received 'OK', wait for NWTIME report
   case WCDMAsetup_NWTIMEwait:
@@ -637,7 +640,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
 
       WCDMAModuleSTEP = WCDMAsetup_IPINITsend; //change state
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 5. p:Received timestamp, send IPINIT
   case WCDMAsetup_IPINITsend:
@@ -648,7 +651,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       
       WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state, initialize finish
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // -------------------- Send -----------------------
     
@@ -664,7 +667,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
        
       WCDMAModuleSTEP = WCDMAsetup_IPOPENsend; // change state
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 7. p: Check previos steps, send IPOPEN
   case WCDMAsetup_IPOPENsend:
@@ -698,21 +701,15 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
         // error type3, poor signal. Normal problem. Upload aboard  
         else
         {
-          setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+          // error response
+          errorResponseWCDMA();
           
-          WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-          
-          if(WCDMAModule_ReConOverTries >= 1)
-            WCDMAModule_ReConOverTries --;
-          else
-            WCDMAModule_ReConOverTries = 0;
-          
-          if(WCDMASignalState == ValServices)
-            queen_Available = AVAILABLE; // set queen states parameter
+          // upload fail, return fail
+          return WCDMAsetup_upload_fail;
         }
       }
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 8. p: Received 'OK', send IPSENDEX
   case WCDMAsetup_IPSENDEXsend:
@@ -732,21 +729,15 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     else // error condition
     {     
       if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR,matchResultTemp))
-      {
-        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+      { 
+        // error response
+        errorResponseWCDMA();   
         
-        WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-        
-        if(WCDMAModule_ReConOverTries >= 1)
-          WCDMAModule_ReConOverTries --;
-        else
-          WCDMAModule_ReConOverTries = 0;
-        
-        if(WCDMASignalState == ValServices)
-          queen_Available = AVAILABLE; // set queen states parameter
+        // upload fail, return fail
+        return WCDMAsetup_upload_fail;
       }
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 9. p: Received 'OK', send data 
   case WCDMAsetup_OKtoSend:
@@ -766,20 +757,14 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     {    
       if(ACK_BMStringSearch(BMSearchTemp,MU609_CME_ERROR,matchResultTemp))
       {
-        setWCDMAoneSecondStepTimer(DISABLE,0,0);// clear timer/counter
+        // error response
+        errorResponseWCDMA();   
         
-        WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
-        
-        if(WCDMAModule_ReConOverTries >= 1)
-          WCDMAModule_ReConOverTries --;
-        else
-          WCDMAModule_ReConOverTries = 0;
-        
-        if(WCDMASignalState == ValServices)
-          queen_Available = AVAILABLE; // set queen states parameter
+        // upload fail, return fail
+        return WCDMAsetup_upload_fail;
       }
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 10. p: Received IPSENDEX ACK, send IPCLOSE
   case WCDMAsetup_IPCLOSEsend:
@@ -789,7 +774,7 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       HalLedBlink( HAL_LED_4, 4, 50, 500 ); // Flash LED, send success
       LEDAvoidControl = 2; // avoid timer control LED for next 2s
       
-      WCDMAModuleSTEP = WCDMAsetup_3GReady; // change state  
+      WCDMAModuleSTEP = WCDMAsetup_SendFinish; // change state  
       WCDMAModule_ReConOverTries = WCDMA_OVERTIMERESET; 
       
       // upload process will result in a few seconds delay in timestamp, 
@@ -800,10 +785,11 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       else // method 2, set to 1
         JSON_TimeCounter = 1;
       
+      // set flag as available
       if(WCDMASignalState == ValServices)
         queen_Available = AVAILABLE; // set queen states parameter
     }
-    break;
+    return WCDMAModuleSTEP;
     
     // 12. update timetamp stage 2
   case WCDMAsetup_TIMESTAMPUPDATE:
@@ -823,12 +809,16 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
       if(WCDMASignalState == ValServices)
         queen_Available = AVAILABLE; // set queen states parameter
     }
-    break;
+    return WCDMAModuleSTEP;
     
   default:
-    break;
+    return No_valid_UART_Msg;
   }
- 
+
+// the following code is for drone react, when the website need send data to
+// drone, the following section is needed. To use the following code, remove 
+// all the return value in the above switch loop.
+  
 #ifdef REACTDRONE
     /* Device Control CMD */
   if((CMDMsg->msg[2]) == 0x41)
@@ -871,7 +861,6 @@ void Cellular_UART(mtOSALSerialData_t *CMDMsg)
     }     
   }
 #endif
-  
 }
 
 /*********************************************************************
@@ -1008,4 +997,29 @@ static uint8 codeToRamSizeof(const char __code * codeAddr)
     size++;
   
   return size;
+}
+
+/*********************************************************************
+ * @fn      errorResponseWCDMA
+ *
+ * @brief   Assemble all the error, reset, upload function here 
+ *
+ * @param   void
+ *
+ * @return  void
+ */
+static void errorResponseWCDMA( void ){
+  // change state
+  WCDMAModuleSTEP = WCDMAsetup_3GReady; 
+  
+  // clear timer/counter          
+  setWCDMAoneSecondStepTimer(DISABLE,0,0);
+  if(WCDMAModule_ReConOverTries >= 1)
+    WCDMAModule_ReConOverTries --;
+  else
+    WCDMAModule_ReConOverTries = 0;
+
+  // set queen states parameter
+  if(WCDMASignalState == ValServices)
+    queen_Available = AVAILABLE; 
 }
