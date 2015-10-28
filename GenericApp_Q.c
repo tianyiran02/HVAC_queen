@@ -258,8 +258,8 @@ void GenericApp_Init( uint8 task_id )
   
   // restart 3G module if it's already started
   queen_Reset3GModule();
-  P0 |= 0x80; // set P0.7 as 1. Use the command process time delay to triger 
-              // 3G module reset pulse.
+  // set P0.7 as 1. Use the command process time delay to triger 3G module reset 
+  P0 |= 0x80; 
   
   // Update the display
 #if defined ( LCD_SUPPORTED )
@@ -312,11 +312,13 @@ uint16 GenericApp_ProcessEvent( uint8 task_id, uint16 events )
     {
       switch ( MSGpkt->hdr.event )
       {
-        case CMD_SERIAL_MSG: // UART, communicate with Cellular module
+        case CMD_SERIAL_MSG: 
+          // UART, communicate with Cellular module
           queen_HandleUART((mtOSALSerialData_t *)MSGpkt);
           break;
           
-        case AF_INCOMING_MSG_CMD: // Zigbee data
+        case AF_INCOMING_MSG_CMD: 
+          // Zigbee data
           GenericApp_MessageMSGCB( MSGpkt );
           break;
 
@@ -628,6 +630,7 @@ static void queen_HandleUART(mtOSALSerialData_t *CMDMsg)
   // handle UART Msg
   temp = Cellular_UART(CMDMsg);
   
+  // if send finish or upload failed, send ACK
   if((temp == WCDMAsetup_SendFinish) || (temp == WCDMAsetup_upload_fail)){
     // update status
     if(temp == WCDMAsetup_SendFinish){
@@ -635,7 +638,7 @@ static void queen_HandleUART(mtOSALSerialData_t *CMDMsg)
       WCDMAModuleSTEP = WCDMAsetup_3GReady; 
     }
     
-    // prepare for Msg
+    // prepare ACK Msg
     Msgbuf[0] = 0x23;
     Msgbuf[2] = AVAILABLE;
     
